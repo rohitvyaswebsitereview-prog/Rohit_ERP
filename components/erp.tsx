@@ -71,7 +71,12 @@ import {
   dateLabel,
   exportCSV,
 } from './erp-ui';
-import { modules, titles, routeKind } from '@/lib/navigation';
+import {
+  modules,
+  titles,
+  routeKind,
+  pendingMenuRoutes,
+} from '@/lib/navigation';
 import { accountNames } from '@/lib/domain';
 import type { RecordData } from '@/lib/domain';
 import Login from './login';
@@ -129,7 +134,10 @@ function AppSidebar({
   };
   const item = (m: (typeof modules)[number]) => {
     const Icon = m.icon;
-    const active = route === m.key || m.items.some((i) => i[1] === route);
+    const owner = modules.find((module) =>
+      module.items.some((i) => i[1] === route),
+    );
+    const active = route === m.key || owner?.key === m.key;
     return (
       <SidebarMenuItem key={m.key}>
         {state === 'collapsed' && m.items.length ? (
@@ -147,12 +155,15 @@ function AppSidebar({
               <span>{m.label}</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="right" className="nav-flyout">
-              {m.items.map(([section, r, label], i) => (
+              {m.items.map(([, r, label]) => (
                 <div key={r}>
-                  {(i === 0 || m.items[i - 1][0] !== section) && (
-                    <p className="submenu-label">{section}</p>
-                  )}
-                  <DropdownMenuItem onClick={() => nav(r)}>
+                  <DropdownMenuItem
+                    disabled={pendingMenuRoutes.has(r)}
+                    onClick={() => nav(r)}
+                    title={
+                      pendingMenuRoutes.has(r) ? 'Not available yet' : undefined
+                    }
+                  >
                     {label}
                   </DropdownMenuItem>
                 </div>
@@ -182,13 +193,16 @@ function AppSidebar({
             </SidebarMenuButton>
             {expanded === m.key && !!m.items.length && (
               <div className="submenu">
-                {m.items.map(([section, r, label], i) => (
+                {m.items.map(([, r, label]) => (
                   <div key={r}>
-                    {(i === 0 || m.items[i - 1][0] !== section) && (
-                      <p className="submenu-label">{section}</p>
-                    )}
                     <button
                       className={route === r ? 'active' : ''}
+                      disabled={pendingMenuRoutes.has(r)}
+                      title={
+                        pendingMenuRoutes.has(r)
+                          ? 'Not available yet'
+                          : undefined
+                      }
                       onClick={() => nav(r)}
                     >
                       {label}
@@ -211,19 +225,16 @@ function AppSidebar({
           </span>
           <div className="brand-text">
             <strong>Rohit's ERP</strong>
-            <small>BUSINESS WORKSPACE</small>
           </div>
         </div>
         <SidebarMenu>{item(modules[0])}</SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <p className="nav-section">WORKSPACE</p>
         <SidebarMenu>
           {modules.slice(1, 13).filter(visible).map(item)}
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
-        <p className="nav-section">SYSTEM</p>
         <SidebarMenu>{modules.slice(13).filter(visible).map(item)}</SidebarMenu>
         <div className="sidebar-local">
           <i /> Local workspace

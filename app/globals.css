@@ -1920,3 +1920,9 @@ button[data-slot='button'][data-size='icon'] {
     animation: none !important;
   }
 }
+/* Flat sidebar menus requested on 7 September 2026. */
+.submenu button:disabled{color:#84959d;cursor:not-allowed;opacity:.65}
+.submenu button{white-space:normal;line-height:1.5;min-height:36px}
+.erp-sidebar [data-slot=sidebar-footer] .submenu{max-height: min(38vh,320px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#3c525d transparent}
+.nav-flyout{max-height:70vh;overflow-y:auto}
+.nav-item>span{white-space:normal;line-height:1.2;flex:1;min-width:0;font-size:13px}

@@ -61,3 +61,7 @@ Names alone are not field-level functional specifications. Implemented foundatio
 The brief describes a production-grade, modular, multi-tenant ERP roadmap across finance, inventory, procurement, sales, HR/payroll, manufacturing, optional projects, reporting and admin. It asks for typed APIs, relational integrity, events, RBAC/SSO/MFA, audit, localisation, integrations, imports/exports, performance, availability, observability, CI/CD and documentation.
 
 The immediate request says “start building,” and the later user clarification prioritises uploaded login/dashboard material. The implementation therefore delivers a real local foundation and documents later phases rather than claiming all enterprise modules or production controls are finished. A modular monolith avoids premature service boundaries. Local SQLite/D1 is an explicit delivery tradeoff against the brief's suggested PostgreSQL; production database architecture is an open follow-up.
+
+## Sidebar revision on 7 September 2026
+
+The user's latest instruction overrides the document's recommendation for section headings. Sidebar section labels, submenu headings and the brand subtitle are removed. The final 17-domain order is retained. The document's proposed submenu inventory is now visible, with unimplemented screens disabled and labelled through hover text; these entries do not claim recovered legacy workflows or completed functionality. Expanded Masters/Administration submenus scroll within the fixed footer. Existing working routes remain accessible.
