@@ -4,7 +4,9 @@ Run the project using the README instructions. Create the first local account in
 
 ## Starting on the original computer
 
-Run `Start Rohits ERP.sh` in the parent workspace. It locates the installed Node/pnpm runtime and starts the server on 127.0.0.1:3000. If the server is already running it prints the existing address. Leave its terminal open during use. The `Stop Rohits ERP.sh` script stops only the process launched by that start script; stop any manually launched process in its own terminal.
+Run `Start Rohits ERP.sh` in the parent workspace, or `bash scripts/start-local.sh` from the app folder. This starts a per-user service on 127.0.0.1:3000 and waits for the API to be ready. It runs independently of the chat/terminal and restarts after a process failure. It is not configured to start automatically at login.
+
+Use `Stop Rohits ERP.sh` or `bash scripts/stop-local.sh` to stop it. View logs with `journalctl --user -u rohits-erp.service`. The service preserves the existing `.wrangler/state` database. For development builds, stop the service before `pnpm build`, then start it again; avoid running the build and development runtime concurrently on this computer.
 
 ## Backup and restore
 
