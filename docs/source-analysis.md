@@ -65,3 +65,7 @@ The immediate request says “start building,” and the later user clarificatio
 ## Sidebar revision on 7 September 2026
 
 The user's latest instruction overrides the document's recommendation for section headings. Sidebar section labels, submenu headings and the brand subtitle are removed. The final 17-domain order is retained. The document's proposed submenu inventory is now visible, with unimplemented screens disabled and labelled through hover text; these entries do not claim recovered legacy workflows or completed functionality. Expanded Masters/Administration submenus scroll within the fixed footer. Existing working routes remain accessible.
+
+## Final Masters catalogue specification
+
+The newly supplied detailed Masters design was read in full. It supersedes the exploratory Masters submenu inventory: exactly eight categories and 28 entries, row-only navigation, catalogue search with semantic aliases, natural card heights, responsive 3/2/1 columns and hidden unauthorised entries. Sidebar Masters now opens the catalogue directly. Individual unfinished master screens remain explicitly marked as unimplemented. See `masters-design.md` for the specification mapping and scope boundary.

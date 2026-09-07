@@ -61,6 +61,76 @@ try {
   });
   check('Local account setup', () => assert.equal(r.status, 200));
   cookie = r.cookie.split(';')[0];
+  r = await call('masters');
+  const catalogue = r.data;
+  check('Masters catalogue contains eight categories and 28 items', () => {
+    assert.equal(catalogue.length, 8);
+    assert.equal(catalogue.flatMap((c) => c.items).length, 28);
+    assert.deepEqual(
+      catalogue.map((c) => c.label),
+      [
+        'Organisation',
+        'Products & Packaging',
+        'Business Partners',
+        'Trade & Commercial',
+        'Trade Licences',
+        'Logistics',
+        'Documents & Communication',
+        'Operations',
+      ],
+    );
+  });
+  check('Masters omits speculative and application settings entries', () => {
+    const labels = catalogue.flatMap((c) => c.items.map((i) => i.label));
+    for (const label of [
+      'Branches',
+      'Financial Years',
+      'Users',
+      'User Roles',
+      'Warehouses',
+      'Salesperson',
+      'Notification Templates',
+    ])
+      assert.ok(!labels.includes(label));
+  });
+  await build({
+    entryPoints: ['lib/masters.ts'],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    outfile: '.test-output/masters.mjs',
+  });
+  const { searchMasters } = await import('../.test-output/masters.mjs');
+  for (const [query, expected] of [
+    ['shipping', ['Shipment Terms', 'Shipping Lines', 'Shipping Line Charges']],
+    ['customer', ['Customers', 'Delivery Addresses']],
+    ['licence', ['Advance Licence', 'EPCG Licence']],
+    ['bank', ['Bank Details']],
+    ['package', ['Packages', 'Package Types', 'Packaging Materials']],
+    [
+      '  SHIPPING  ',
+      ['Shipment Terms', 'Shipping Lines', 'Shipping Line Charges'],
+    ],
+    ['nothing-matches', []],
+  ])
+    check('Master name search: ' + query, () =>
+      assert.deepEqual(
+        searchMasters(catalogue, query).flatMap((c) =>
+          c.items.map((i) => i.label),
+        ),
+        expected,
+      ),
+    );
+  r = await call('masters/company-information');
+  check('Master destination identifies unfinished screen honestly', () => {
+    assert.equal(r.status, 200);
+    assert.equal(r.data.implemented, false);
+  });
+  r = await call('masters', undefined, '');
+  check('Unauthenticated catalogue request is denied', () =>
+    assert.equal(r.status, 401),
+  );
+
   r = await call('setup', {
     name: 'Other',
     email: 'other@example.test',
@@ -323,6 +393,23 @@ try {
   );
   check('Logistics role cannot read financial totals', () =>
     assert.deepEqual(r.data.totals, []),
+  );
+  r = await call('masters', undefined, l.cookie.split(';')[0]);
+  check('Restricted master categories are hidden for Logistics', () => {
+    assert.ok(
+      !r.data.some(
+        (c) => c.key === 'trade-licences' || c.key === 'organisation',
+      ),
+    );
+    assert.ok(
+      !r.data
+        .flatMap((c) => c.items)
+        .some((i) => i.key === 'vendors' || i.key === 'bank-details'),
+    );
+  });
+  r = await call('masters/bank-details', undefined, l.cookie.split(';')[0]);
+  check('Direct restricted master request is denied server-side', () =>
+    assert.equal(r.status, 404),
   );
   const csrf = await mf.dispatchFetch(
     'http://localhost/api/v1/records/customers',

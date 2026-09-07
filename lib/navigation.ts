@@ -1,3 +1,4 @@
+import { masterItems } from './masters';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -366,3 +367,8 @@ export const routeKind = (route: string) =>
     'trial-balance': 'journal',
     stock: 'movements',
   })[route] || route;
+
+// The final Masters specification replaces the exploratory sidebar inventory.
+const mastersModule = modules.find((m) => m.key === 'masters');
+if (mastersModule) mastersModule.items = [];
+for (const item of masterItems) titles[item.route] = item.label;

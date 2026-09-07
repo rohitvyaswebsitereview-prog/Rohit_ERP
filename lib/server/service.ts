@@ -1,3 +1,4 @@
+import { permittedMasters, masterItems } from '../masters';
 import { env } from 'cloudflare:workers';
 import { schema } from './schema';
 import {
@@ -564,6 +565,14 @@ export async function handle(req: Request) {
         );
       if (statements.length) await db().batch(statements);
       return json({ ok: true });
+    }
+    if (path === 'masters' && req.method === 'GET')
+      return json(permittedMasters(u.role));
+    if (path.startsWith('masters/') && req.method === 'GET') {
+      const item = masterItems.find((i) => i.key === path.slice(8));
+      if (!item || !item.roles.includes(u.role))
+        return json({ error: 'Master not found or access unavailable.' }, 404);
+      return json(item);
     }
     const allowed = permissions[u.role] || [];
     if (path === 'dashboard' && req.method === 'GET') {

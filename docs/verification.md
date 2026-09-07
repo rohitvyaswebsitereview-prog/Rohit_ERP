@@ -2,7 +2,7 @@
 
 Local type checking and production bundling passed. The HTTP root and setup-status API returned HTTP 200. Browser interaction/visual UAT has not been performed; the local preview is open for the user. The production build reports a large-client-chunk warning, so route splitting is a future performance improvement.
 
-The isolated integration suite passes 36 checks:
+The isolated integration suite passes 49 checks:
 
 1. Unauthenticated data access is denied.
 2. Local administrator setup works.
@@ -30,3 +30,5 @@ The isolated integration suite passes 36 checks:
 Tests use a temporary independent Miniflare/D1 database and dispose of it after completion. They do not seed, change or delete the user's local workspace. Performance SLAs, production load, accessibility, visual responsiveness, statutory accuracy and disaster recovery have not been certified.
 
 Additional checks cover prototype-named invalid accounts, unsafe integer journal totals, invalid/blank workflow stages, status-only progress preservation, and stale record versions. All 36 pass as of 7 September 2026.
+
+The Masters catalogue adds 13 passing checks for exact inventory, exclusions, search aliases, authentication and role access. Total: 49 checks.

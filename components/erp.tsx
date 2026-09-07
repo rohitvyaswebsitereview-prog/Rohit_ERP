@@ -1,4 +1,6 @@
 'use client';
+import Masters, { MasterDestination } from './masters';
+import { masterItems } from '@/lib/masters';
 import { useEffect, useState, useCallback } from 'react';
 import {
   Search,
@@ -137,7 +139,11 @@ function AppSidebar({
     const owner = modules.find((module) =>
       module.items.some((i) => i[1] === route),
     );
-    const active = route === m.key || owner?.key === m.key;
+    const active =
+      route === m.key ||
+      (masterItems.some((i) => i.route === route)
+        ? m.key === 'masters'
+        : owner?.key === m.key);
     return (
       <SidebarMenuItem key={m.key}>
         {state === 'collapsed' && m.items.length ? (
@@ -589,45 +595,57 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
           </div>
         </header>
         <main className="page-content">
-          <div className="page-heading">
-            <div>
-              <div className="breadcrumb">
-                Workspace <ChevronRight size={12} />
-                {route === 'dashboard' ? 'Overview' : titles[route]}
+          {route !== 'masters' && (
+            <div className="page-heading">
+              <div>
+                <div className="breadcrumb">
+                  {masterItems.some((i) => i.route === route) ? (
+                    <>
+                      <button onClick={() => go('masters')}>Masters</button>
+                      <ChevronRight size={12} />
+                      <span aria-current="page">{titles[route]}</span>
+                    </>
+                  ) : (
+                    <>
+                      Workspace <ChevronRight size={12} />
+                      {route === 'dashboard' ? 'Overview' : titles[route]}
+                    </>
+                  )}
+                </div>
+                <h1>
+                  {route === 'dashboard'
+                    ? 'Business at a glance'
+                    : titles[route] || 'Workspace'}
+                </h1>
+                <p>
+                  {route === 'dashboard'
+                    ? 'Performance, priorities and progress. All in one view.'
+                    : pageSubtitle(route)}
+                </p>
               </div>
-              <h1>
-                {route === 'dashboard'
-                  ? 'Business at a glance'
-                  : titles[route] || 'Workspace'}
-              </h1>
-              <p>
-                {route === 'dashboard'
-                  ? 'Performance, priorities and progress. All in one view.'
-                  : pageSubtitle(route)}
-              </p>
+              {route === 'dashboard' && (
+                <div className="dashboard-controls">
+                  <Pick
+                    label="Period"
+                    value={period}
+                    onChange={changePeriod}
+                    options={[
+                      'Today',
+                      'This week',
+                      'This month',
+                      'This quarter',
+                      'This financial year',
+                      'Custom period',
+                    ]}
+                  />
+                  <span>
+                    <i />
+                    {refreshTime ? 'Updated ' + refreshTime : 'Loading data…'}
+                  </span>
+                </div>
+              )}
             </div>
-            {route === 'dashboard' && (
-              <div className="dashboard-controls">
-                <Pick
-                  label="Period"
-                  value={period}
-                  onChange={changePeriod}
-                  options={[
-                    'Today',
-                    'This week',
-                    'This month',
-                    'This quarter',
-                    'This financial year',
-                    'Custom period',
-                  ]}
-                />
-                <span>
-                  <i />
-                  {refreshTime ? 'Updated ' + refreshTime : 'Loading data…'}
-                </span>
-              </div>
-            )}
-          </div>
+          )}
           {route === 'dashboard' && period === 'Custom period' && (
             <div className="custom-period">
               <Field
@@ -668,6 +686,8 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
                 financial year.
               </div>
             )
+          ) : route === 'masters' ? (
+            <Masters go={go} />
           ) : error ? (
             <div className="error-box" role="alert">
               {error}
@@ -844,28 +864,9 @@ function PageContent({
         {error}
       </div>
     );
-  if (route === 'masters')
-    return (
-      <div className="master-grid">
-        {[
-          ['Business Partners', ['customers', 'vendors']],
-          ['Products & Inventory', ['products', 'warehouses']],
-        ].map(([label, items]: any) => (
-          <section className="widget master-card" key={label}>
-            <h2>{label}</h2>
-            {items.map((k: string) => (
-              <button key={k} onClick={() => go(k)}>
-                <span>{titles[k]}</span>
-                <small>
-                  {records.filter((r: any) => r.kind === k).length} records
-                </small>
-                <ArrowUpRight size={16} />
-              </button>
-            ))}
-          </section>
-        ))}
-      </div>
-    );
+  if (route === 'masters') return <Masters go={go} />;
+  if (route.startsWith('master-'))
+    return <MasterDestination masterKey={route.slice(7)} go={go} />;
   if (['import', 'production'].includes(route))
     return (
       <section className="widget">
