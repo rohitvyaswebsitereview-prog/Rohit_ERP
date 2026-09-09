@@ -396,3 +396,6 @@ for (const key of [
   modules
     .find((m) => m.key === 'finance')
     ?.items.push(['', key, opMap[key].label]);
+
+titles['administration-permissions']='Permissions';
+titles['administration-login-security']='Login & Security';
