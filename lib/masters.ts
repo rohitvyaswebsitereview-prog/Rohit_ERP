@@ -32,7 +32,7 @@ function item(
     keywords,
     roles,
     route,
-    implemented: ['products', 'customers', 'vendors'].includes(route),
+    implemented: true,
   };
 }
 export const masterCategories: MasterCategory[] = [

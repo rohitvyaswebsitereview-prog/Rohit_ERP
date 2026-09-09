@@ -1,3 +1,4 @@
+import { operations } from './operations';
 import { permittedMasters, masterItems } from '../masters';
 import { env } from 'cloudflare:workers';
 import { schema } from './schema';
@@ -84,6 +85,7 @@ function text(v: unknown, label: string, max = 200) {
     throw new Error(`${label} is required (maximum ${max} characters).`);
   return v.trim();
 }
+function safeRecord(r:any,u:any){ if(u.role!=='Viewer')return r; const out={...r}; for(const k of ['accountNumber','pan','gstin','customerGstin','taxRegistrations'])if(out[k])out[k]='••••'+String(out[k]).slice(-4);return out;}
 const decode = (r: any): RecordData => ({
   ...JSON.parse(r.data),
   id: r.id,
@@ -303,10 +305,12 @@ export async function handle(req: Request) {
         return json({ error: 'Cross-origin request blocked.' }, 403);
       if (!req.headers.get('Content-Type')?.includes('application/json'))
         return json({ error: 'JSON content type required.' }, 415);
-      if (Number(req.headers.get('Content-Length') || 0) > 100000)
+      if (Number(req.headers.get('Content-Length') || 0) > (path.startsWith('operations/') ? 7500000 : 100000))
         return json({ error: 'Request is too large.' }, 413);
     }
-    const b = req.method === 'GET' ? {} : ((await req.json()) as any);
+    const bodyText = req.method === 'GET' ? '' : await req.text();
+    if (bodyText.length > (path.startsWith('operations/') ? 7500000 : 100000)) return json({error:'Request is too large.'},413);
+    const b = bodyText ? JSON.parse(bodyText) : {};
     if (path === 'status' && req.method === 'GET')
       return json({
         setupRequired: !(await db()
@@ -404,6 +408,7 @@ export async function handle(req: Request) {
         { error: 'Your session has expired. Please sign in again.' },
         401,
       );
+    if (path.startsWith('operations/')) return await operations(req,path,b,u,db(),(env as any).FILES);
     if (path === 'me') return json({ user: u });
     if (path === 'logout' && req.method === 'POST') {
       const token =
@@ -534,7 +539,7 @@ export async function handle(req: Request) {
         ).results.filter(
           (r: any) =>
             u.role === 'Admin' || permissions[u.role]?.includes(r.kind),
-        ),
+        ).map((r:any)=>u.role==='Viewer'?{...r,detail:'Details restricted to authorised editors.'}:r),
       );
     }
     if (path === 'notifications' && req.method === 'GET') {
@@ -605,7 +610,7 @@ export async function handle(req: Request) {
         u.tenant_id,
         url.searchParams.get('fy') || undefined,
       );
-      return json(all.filter((r) => allowed.includes(r.kind)));
+      return json(all.filter((r) => allowed.includes(r.kind)).map(r=>safeRecord(r,u)));
     }
     if (path === 'search' && req.method === 'GET') {
       const q = (url.searchParams.get('q') || '').toLowerCase().slice(0, 150);
@@ -696,6 +701,7 @@ export async function handle(req: Request) {
         .first<any>();
       if (!raw) return json({ error: 'Record not found.' }, 404);
       const r = decode(raw);
+      if(r.operation && req.method !== 'GET') return json({error:'Use the document workspace to change this record.'},409);
       if (
         req.method === 'POST' &&
         action === 'post' &&

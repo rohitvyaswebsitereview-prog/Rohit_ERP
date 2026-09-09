@@ -25,6 +25,14 @@ export type Kind = (typeof kinds)[number];
 export const masterKinds = ['customers', 'vendors', 'products', 'warehouses'];
 export const accountNames: Record<string, string> = {
   '1000': 'Cash & Bank',
+  '1300': 'Input GST',
+  '1310': 'TCS Recoverable',
+  '1320': 'TDS Receivable',
+  '1400': 'Supplier Advances',
+  '2100': 'Output GST',
+  '2110': 'TDS Payable',
+  '2120': 'TCS Payable',
+  '2200': 'Customer Advances',
   '1100': 'Accounts Receivable',
   '1200': 'Inventory',
   '2000': 'Accounts Payable',

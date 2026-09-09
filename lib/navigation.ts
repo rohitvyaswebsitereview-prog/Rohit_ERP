@@ -1,3 +1,4 @@
+import { opMap, operationRoutes } from './operations';
 import { masterItems } from './masters';
 import {
   LayoutDashboard,
@@ -372,3 +373,6 @@ export const routeKind = (route: string) =>
 const mastersModule = modules.find((m) => m.key === 'masters');
 if (mastersModule) mastersModule.items = [];
 for (const item of masterItems) titles[item.route] = item.label;
+
+for(const [route,key] of Object.entries(operationRoutes)){titles[route]=opMap[key].label; pendingMenuRoutes.delete(route);}
+for(const [key,m] of Object.entries(opMap)) titles[key]=m.label;

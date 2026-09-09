@@ -1,5 +1,10 @@
 'use client';
-import Masters, { MasterDestination } from './masters';
+import Masters from './masters';
+import Operations from './operations';
+import {opMap, operationRoutes} from '@/lib/operations';
+import {OperationReports,OperationHub,reportRoutes} from './operation-reports';
+for(const [route,config] of Object.entries(reportRoutes)){pendingMenuRoutes.delete(route);titles[route]=config.title;}
+
 import { masterItems } from '@/lib/masters';
 import { useEffect, useState, useCallback } from 'react';
 import {
@@ -350,17 +355,20 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
   const refresh = () => setRevision((n) => n + 1);
   const go = useCallback(
     (r: string, f = '', range: { from?: string; to?: string } = {}) => {
-      setRoute(r);
+      const [base,queryString='']=r.split('?');
+      setRoute(base);
       setFilter(f);
+      const extra=new URLSearchParams(queryString);
       window.history.pushState(
         {},
         '',
         r === 'dashboard'
           ? '/'
           : '/' +
-              r +
+              base +
               '?' +
               new URLSearchParams({
+                ...Object.fromEntries(extra),
                 ...(f ? { filter: f } : {}),
                 ...range,
               }).toString(),
@@ -865,8 +873,10 @@ function PageContent({
       </div>
     );
   if (route === 'masters') return <Masters go={go} />;
-  if (route.startsWith('master-'))
-    return <MasterDestination masterKey={route.slice(7)} go={go} />;
+  const operationKind=operationRoutes[route]||route;
+  if(opMap[operationKind]) return <Operations key={operationKind} kind={operationKind} user={user} fy={fy} go={go} refreshParent={refresh} initialId={typeof window!=='undefined'?new URLSearchParams(window.location.search).get('record')||undefined:undefined}/>;
+  if(reportRoutes[route]) return <OperationReports route={route} fy={fy} go={go}/>;
+  if(route==='import'||route==='production') return <OperationHub group={route==='import'?'Import':'Production'} go={go}/>;
   if (['import', 'production'].includes(route))
     return (
       <section className="widget">
