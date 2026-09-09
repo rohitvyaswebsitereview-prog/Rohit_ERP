@@ -427,65 +427,470 @@ try {
   check('Cross-origin mutation is blocked', () =>
     assert.equal(csrf.status, 403),
   );
-  async function opCreate(kind,body){const r=await call('operations/'+kind,body);assert.equal(r.status,201,JSON.stringify(r.data));return r.data.id;}
-  async function opGet(kind,id){const r=await call(`operations/${kind}/${id}`);assert.equal(r.status,200,JSON.stringify(r.data));return r.data.record;}
-  async function opStatus(kind,id,status){const rec=await opGet(kind,id);return call(`operations/${kind}/${id}/status`,{status,version:rec.version,reason:'Integration test action'});}
-  const currencyId=await opCreate('master-currency',{name:'US Dollar',code:'USD',words:'US dollars'});
-  const opCustomer=await opCreate('customers',{name:'Workflow customer',country:'India',email:'workflow@example.test'});
-  const opVendor=await opCreate('vendors',{name:'Workflow vendor',country:'India'});
-  const opWarehouse=await opCreate('warehouses',{name:'Workflow warehouse'});
-  const opProduct=await opCreate('products',{name:'Lathe',sku:'LATHE-1'});
-  const base={reference:'Q-TEST-1',date:'2026-09-09',dueDate:'2026-10-09',currencyId,partnerId:opCustomer,warehouseId:opWarehouse,lines:[{productId:opProduct,description:'Lathe',quantity:'2',rate:'100',gstRate:'18',tcsRate:'1',tdsRate:'2',charges:'5',roundOff:'-0.50'}]};
-  const purchase=await opCreate('purchase-invoices',{...base,reference:'PUR-TEST-1',partnerId:opVendor,warehouseId:opWarehouse});
-  r=await opStatus('purchase-invoices',purchase,'Posted');
-  check('Purchase invoice posts stock value and tax liabilities',()=>assert.equal(r.status,200));
-  const quotation=await opCreate('quotations',base);
-  let opRecord=await opGet('quotations',quotation);
-  check('Server calculates exact commercial amounts',()=>{assert.equal(opRecord.lines[0].basic,20000);assert.equal(opRecord.amount,23850);});
-  r=await call(`operations/quotations/${quotation}/save`,{...base,version:1});
-  check('Critical edits require reasons',()=>assert.equal(r.status,400));
-  r=await opStatus('quotations',quotation,'Accepted');
-  check('Quotation cannot skip the sent stage',()=>assert.equal(r.status,400));
-  assert.equal((await opStatus('quotations',quotation,'Sent')).status,200);
-  assert.equal((await opStatus('quotations',quotation,'Accepted')).status,200);
-  opRecord=await opGet('quotations',quotation);
-  r=await call(`operations/quotations/${quotation}/convert`,{version:opRecord.version,reason:'Accepted order',target:'proformas',reference:'PI-TEST-1'});
-  check('Accepted quotation converts into a linked proforma',()=>assert.equal(r.status,201));
-  const proforma=r.data.id;
-  assert.equal((await opStatus('proformas',proforma,'Confirmed')).status,200);
-  opRecord=await opGet('proformas',proforma);
-  r=await call(`operations/proformas/${proforma}/convert`,{version:opRecord.version,reason:'Ready to invoice',target:'invoices',reference:'CI-TEST-1'});
-  const commercial=r.data.id;
-  check('Proforma converts into commercial invoice with preserved lines',()=>assert.equal(r.status,201));
-  r=await opStatus('invoices',commercial,'Posted');
-  check('Commercial invoice posts balanced tax and receivable entries',()=>assert.equal(r.status,200));
-  r=await opStatus('invoices',commercial,'Posted');
-  check('Duplicate operational posting is rejected',()=>assert.equal(r.status,400));
-  r=await call(`records/invoices/${commercial}/post`,{});
-  check('Legacy endpoints cannot mutate operational documents',()=>assert.notEqual(r.status,200));
-  const receipt=await opCreate('receipts',{reference:'REC-TEST-1',date:'2026-09-09',currencyId,partnerId:opCustomer,invoiceId:commercial,amount:'100',bankReference:'BANK-TEST'});
-  assert.equal((await opStatus('receipts',receipt,'Posted')).status,200);
-  const excessive=await opCreate('receipts',{reference:'REC-TEST-2',date:'2026-09-09',currencyId,partnerId:opCustomer,invoiceId:commercial,amount:'200',bankReference:'BANK-TEST-2'});
-  r=await opStatus('receipts',excessive,'Posted');
-  check('Receipts cannot exceed the outstanding invoice balance',()=>assert.equal(r.status,400));
-  r=await opStatus('invoices',commercial,'Reversed');
-  check('Invoice reversal is blocked while dependent receipts exist',()=>assert.equal(r.status,400));
-  assert.equal((await opStatus('receipts',receipt,'Reversed')).status,200);
-  assert.equal((await opStatus('receipts',excessive,'Cancelled')).status,200);
-  r=await opStatus('invoices',commercial,'Reversed');
-  check('Invoice reversal succeeds after dependent receipts are resolved',()=>assert.equal(r.status,200));
-  const machine=await opCreate('machines',{name:'Lathe serial',serialNumber:'any / serial #1',productId:opProduct,warehouseId:opWarehouse});
-  r=await call('operations/machines',{name:'Duplicate',serialNumber:'any / serial #1',productId:opProduct,warehouseId:opWarehouse});
-  check('Machine serials are unique without grammar restrictions',()=>assert.equal(r.status,409));
-  r=await call(`operations/machines/${machine}/document`,{filename:'inspection.txt',mime:'text/plain',category:'Inspection report',content:btoa('Inspected and accepted.'),status:'Final'});
-  check('Entity document upload persists file metadata and content',()=>assert.equal(r.status,201));
-  const documentId=r.data.id;
-  const downloaded=await mf.dispatchFetch(`http://localhost/api/v1/operations/documents/${documentId}`,{headers:{Cookie:cookie}});
-  check('Authorised file download returns original bytes',()=>assert.equal(downloaded.status,200));
-  assert.equal(await downloaded.text(),'Inspected and accepted.');
-  r=await call('operations/data',undefined,'');
-  check('All operational data requires authentication',()=>assert.equal(r.status,401));
+  async function opCreate(kind, body) {
+    const r = await call('operations/' + kind, body);
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    return r.data.id;
+  }
+  async function opGet(kind, id) {
+    const r = await call(`operations/${kind}/${id}`);
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    return r.data.record;
+  }
+  async function opStatus(kind, id, status) {
+    const rec = await opGet(kind, id);
+    return call(`operations/${kind}/${id}/status`, {
+      status,
+      version: rec.version,
+      reason: 'Integration test action',
+    });
+  }
+  const currencyId = await opCreate('master-currency', {
+    name: 'US Dollar',
+    code: 'USD',
+    words: 'US dollars',
+  });
+  const opCustomer = await opCreate('customers', {
+    name: 'Workflow customer',
+    country: 'India',
+    email: 'workflow@example.test',
+  });
+  const opVendor = await opCreate('vendors', {
+    name: 'Workflow vendor',
+    country: 'India',
+  });
+  const opWarehouse = await opCreate('warehouses', {
+    name: 'Workflow warehouse',
+  });
+  const opProduct = await opCreate('products', {
+    name: 'Lathe',
+    sku: 'LATHE-1',
+  });
+  const base = {
+    reference: 'Q-TEST-1',
+    date: '2026-09-09',
+    dueDate: '2026-10-09',
+    currencyId,
+    partnerId: opCustomer,
+    warehouseId: opWarehouse,
+    lines: [
+      {
+        productId: opProduct,
+        description: 'Lathe',
+        quantity: '2',
+        rate: '100',
+        gstRate: '18',
+        tcsRate: '1',
+        tdsRate: '2',
+        charges: '5',
+        roundOff: '-0.50',
+      },
+    ],
+  };
+  const purchase = await opCreate('purchase-invoices', {
+    ...base,
+    reference: 'PUR-TEST-1',
+    partnerId: opVendor,
+    warehouseId: opWarehouse,
+  });
+  r = await opStatus('purchase-invoices', purchase, 'Posted');
+  check('Purchase invoice posts stock value and tax liabilities', () =>
+    assert.equal(r.status, 200, JSON.stringify(r.data)),
+  );
+  const quotation = await opCreate('quotations', base);
+  let opRecord = await opGet('quotations', quotation);
+  check('Server calculates exact commercial amounts', () => {
+    assert.equal(opRecord.lines[0].basic, 20000);
+    assert.equal(opRecord.amount, 23850);
+  });
+  r = await call(`operations/quotations/${quotation}/save`, {
+    ...base,
+    version: 1,
+  });
+  check('Critical edits require reasons', () => assert.equal(r.status, 400));
+  r = await opStatus('quotations', quotation, 'Accepted');
+  check('Quotation cannot skip the sent stage', () =>
+    assert.equal(r.status, 400),
+  );
+  assert.equal((await opStatus('quotations', quotation, 'Sent')).status, 200);
+  assert.equal(
+    (await opStatus('quotations', quotation, 'Accepted')).status,
+    200,
+  );
+  opRecord = await opGet('quotations', quotation);
+  r = await call(`operations/quotations/${quotation}/convert`, {
+    version: opRecord.version,
+    reason: 'Accepted order',
+    target: 'proformas',
+    reference: 'PI-TEST-1',
+  });
+  check('Accepted quotation converts into a linked proforma', () =>
+    assert.equal(r.status, 201),
+  );
+  const proforma = r.data.id;
+  assert.equal(
+    (await opStatus('proformas', proforma, 'Confirmed')).status,
+    200,
+  );
+  opRecord = await opGet('proformas', proforma);
+  r = await call(`operations/proformas/${proforma}/convert`, {
+    version: opRecord.version,
+    reason: 'Ready to invoice',
+    target: 'invoices',
+    reference: 'CI-TEST-1',
+  });
+  const commercial = r.data.id;
+  check('Proforma converts into commercial invoice with preserved lines', () =>
+    assert.equal(r.status, 201),
+  );
+  opRecord = await opGet('invoices', commercial);
+  r = await call(`operations/invoices/${commercial}/save`, {
+    ...opRecord,
+    warehouseId: opWarehouse,
+    reason: 'Assign dispatch warehouse',
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  r = await opStatus('invoices', commercial, 'Posted');
+  check('Commercial invoice posts balanced tax and receivable entries', () =>
+    assert.equal(r.status, 200, JSON.stringify(r.data)),
+  );
+  r = await opStatus('invoices', commercial, 'Posted');
+  check('Duplicate operational posting is rejected', () =>
+    assert.equal(r.status, 400),
+  );
+  r = await call(`records/invoices/${commercial}/post`, {});
+  check('Legacy endpoints cannot mutate operational documents', () =>
+    assert.notEqual(r.status, 200),
+  );
+  const receipt = await opCreate('receipts', {
+    reference: 'REC-TEST-1',
+    date: '2026-09-09',
+    currencyId,
+    partnerId: opCustomer,
+    invoiceId: commercial,
+    amount: '100',
+    bankReference: 'BANK-TEST',
+  });
+  assert.equal((await opStatus('receipts', receipt, 'Posted')).status, 200);
+  const excessive = await opCreate('receipts', {
+    reference: 'REC-TEST-2',
+    date: '2026-09-09',
+    currencyId,
+    partnerId: opCustomer,
+    invoiceId: commercial,
+    amount: '200',
+    bankReference: 'BANK-TEST-2',
+  });
+  r = await opStatus('receipts', excessive, 'Posted');
+  check('Receipts cannot exceed the outstanding invoice balance', () =>
+    assert.equal(r.status, 400),
+  );
+  r = await opStatus('invoices', commercial, 'Reversed');
+  check('Invoice reversal is blocked while dependent receipts exist', () =>
+    assert.equal(r.status, 400),
+  );
+  assert.equal((await opStatus('receipts', receipt, 'Reversed')).status, 200);
+  assert.equal(
+    (await opStatus('receipts', excessive, 'Cancelled')).status,
+    200,
+  );
+  r = await opStatus('invoices', commercial, 'Reversed');
+  check('Invoice reversal succeeds after dependent receipts are resolved', () =>
+    assert.equal(r.status, 200, JSON.stringify(r.data)),
+  );
+  const machine = await opCreate('machines', {
+    name: 'Lathe serial',
+    serialNumber: 'any / serial #1',
+    productId: opProduct,
+    warehouseId: opWarehouse,
+  });
+  r = await call('operations/machines', {
+    name: 'Duplicate',
+    serialNumber: 'any / serial #1',
+    productId: opProduct,
+    warehouseId: opWarehouse,
+  });
+  check('Machine serials are unique without grammar restrictions', () =>
+    assert.equal(r.status, 409),
+  );
+  r = await call(`operations/machines/${machine}/document`, {
+    filename: 'inspection.txt',
+    mime: 'text/plain',
+    category: 'Inspection report',
+    content: btoa('Inspected and accepted.'),
+    status: 'Final',
+  });
+  check('Entity document upload persists file metadata and content', () =>
+    assert.equal(r.status, 201),
+  );
+  const documentId = r.data.id;
+  const downloaded = await mf.dispatchFetch(
+    `http://localhost/api/v1/operations/documents/${documentId}`,
+    { headers: { Cookie: cookie } },
+  );
+  check('Authorised file download returns original bytes', () =>
+    assert.equal(downloaded.status, 200),
+  );
+  assert.equal(await downloaded.text(), 'Inspected and accepted.');
+  r = await call('operations/data', undefined, '');
+  check('All operational data requires authentication', () =>
+    assert.equal(r.status, 401),
+  );
 
+  const secondWarehouse = await opCreate('warehouses', {
+    name: 'Transfer destination',
+  });
+  const transfer = await opCreate('stock-transfers', {
+    reference: 'TR-1',
+    date: '2026-09-09',
+    currencyId,
+    productId: opProduct,
+    warehouseId: opWarehouse,
+    toWarehouseId: secondWarehouse,
+    quantity: '1',
+    reason: 'Relocate',
+  });
+  r = await opStatus('stock-transfers', transfer, 'Posted');
+  check('Stock transfer posts both source and destination movements', () =>
+    assert.equal(r.status, 200, JSON.stringify(r.data)),
+  );
+  let balances = (await call('operations/stock')).data;
+  check('Transfer conserves quantity and inventory value', () => {
+    const b = balances.filter((r) => r.product_id === opProduct);
+    assert.equal(
+      b.reduce((s, r) => s + r.quantity, 0),
+      2,
+    );
+    assert.equal(
+      b.reduce((s, r) => s + r.value, 0),
+      20450,
+    );
+  });
+  const tooMuch = await opCreate('stock-transfers', {
+    reference: 'TR-2',
+    date: '2026-09-09',
+    currencyId,
+    productId: opProduct,
+    warehouseId: opWarehouse,
+    toWarehouseId: secondWarehouse,
+    quantity: '4',
+    reason: 'Relocate',
+  });
+  r = await opStatus('stock-transfers', tooMuch, 'Posted');
+  check('Transfer cannot overdraw its source warehouse', () =>
+    assert.equal(r.status, 400),
+  );
+  r = await call('operations/invoices', undefined, l.cookie.split(';')[0]);
+  check('Logistics cannot access invoice operational API', () =>
+    assert.equal(r.status, 403),
+  );
+  const foreignOp = (await call('operations/data')).data;
+  check('Operational records are isolated between tenants', () =>
+    assert.ok(!foreignOp.some((r) => r.id === 'foreign-record')),
+  );
+
+  r = await call(
+    'operations/customers',
+    { name: 'Forbidden', country: 'India' },
+    viewerCookie,
+  );
+  check('Viewer cannot create operational records', () =>
+    assert.equal(r.status, 403),
+  );
+  const templateId = await opCreate('master-document-templates', {
+    name: 'Invoice template',
+    documentType: 'Invoice',
+    body: 'Reference: {{reference}}\nCompany: {{company}}\nTotal: {{total}}\n{{lines}}',
+  });
+  r = await call(`operations/invoices/${commercial}/generate`, { templateId });
+  check('Template engine creates a versioned Word document', () =>
+    assert.equal(r.status, 201, JSON.stringify(r.data)),
+  );
+  const generated = await mf.dispatchFetch(
+    `http://localhost/api/v1/operations/documents/${r.data.id}`,
+    { headers: { Cookie: cookie } },
+  );
+  const generatedBytes = new Uint8Array(await generated.arrayBuffer());
+  check('Generated document is a DOCX archive', () => {
+    assert.deepEqual([...generatedBytes.slice(0, 4)], [80, 75, 3, 4]);
+    assert.match(generated.headers.get('content-type'), /wordprocessingml/);
+  });
+  const brokenTemplate = await opCreate('master-document-templates', {
+    name: 'Missing data',
+    documentType: 'Invoice',
+    body: '{{unrecognised}}',
+  });
+  r = await call(`operations/invoices/${commercial}/generate`, {
+    templateId: brokenTemplate,
+  });
+  check(
+    'Missing template variables prevent incomplete document generation',
+    () => assert.equal(r.status, 400),
+  );
+  const advance = await opCreate('customer-advances', {
+    reference: 'ADV-TEST',
+    date: '2026-09-09',
+    currencyId,
+    partnerId: opCustomer,
+    amount: '80',
+    bankReference: 'ADV-BANK',
+  });
+  assert.equal(
+    (await opStatus('customer-advances', advance, 'Posted')).status,
+    200,
+  );
+  const serviceInvoice = await opCreate('invoices', {
+    ...base,
+    reference: 'SERVICE-CI',
+    warehouseId: opWarehouse,
+    lines: [{ description: 'Inspection service', quantity: '1', rate: '100' }],
+  });
+  assert.equal(
+    (await opStatus('invoices', serviceInvoice, 'Posted')).status,
+    200,
+  );
+  const adjustment = await opCreate('customer-advance-adjustments', {
+    reference: 'ADJ-TEST',
+    date: '2026-09-09',
+    currencyId,
+    partnerId: opCustomer,
+    advanceId: advance,
+    invoiceId: serviceInvoice,
+    amount: '50',
+  });
+  r = await opStatus('customer-advance-adjustments', adjustment, 'Posted');
+  check(
+    'Customer advance adjustment settles invoice without cash duplication',
+    () => assert.equal(r.status, 200, JSON.stringify(r.data)),
+  );
+  const refund = await opCreate('customer-advance-refunds', {
+    reference: 'REFUND-TEST',
+    date: '2026-09-09',
+    currencyId,
+    partnerId: opCustomer,
+    advanceId: advance,
+    amount: '40',
+    bankReference: 'REFUND-BANK',
+  });
+  r = await opStatus('customer-advance-refunds', refund, 'Posted');
+  check('Refund cannot consume an already adjusted advance balance', () =>
+    assert.equal(r.status, 400),
+  );
+  let refundRecord = await opGet('customer-advance-refunds', refund);
+  r = await call(`operations/customer-advance-refunds/${refund}/save`, {
+    ...refundRecord,
+    amount: '30',
+    reason: 'Refund remaining balance',
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  r = await opStatus('customer-advance-refunds', refund, 'Posted');
+  check('Remaining customer advance can be refunded', () =>
+    assert.equal(r.status, 200, JSON.stringify(r.data)),
+  );
+  r = await opStatus('customer-advances', advance, 'Reversed');
+  check(
+    'Advance reversal is blocked while adjustments and refunds are posted',
+    () => assert.equal(r.status, 400),
+  );
+  const opData = (await call('operations/data')).data;
+  check('Net outstanding reflects advance adjustments', () => {
+    const allocations = opData.filter(
+      (x) => x.invoiceId === serviceInvoice && x.status === 'Posted',
+    );
+    assert.equal(
+      allocations.reduce((s, x) => s + x.amount, 0),
+      5000,
+    );
+  });
+  const material = await opCreate('products', {
+    name: 'Raw material',
+    sku: 'RAW-TEST',
+  });
+  const outputProduct = await opCreate('products', {
+    name: 'Finished product',
+    sku: 'FIN-TEST',
+  });
+  const opening = await opCreate('stock-adjustments', {
+    reference: 'OPEN-TEST',
+    date: '2026-09-09',
+    currencyId,
+    productId: material,
+    warehouseId: opWarehouse,
+    direction: 'Receipt',
+    quantity: '4',
+    unitCost: '5',
+    reason: 'Opening balance',
+  });
+  assert.equal(
+    (await opStatus('stock-adjustments', opening, 'Posted')).status,
+    200,
+  );
+  const bom = await opCreate('master-bom', {
+    name: 'Test BOM',
+    productId: outputProduct,
+    revision: '1',
+    components: '2 raw units per finished unit',
+  });
+  const production = await opCreate('production-orders', {
+    reference: 'PROD-TEST',
+    date: '2026-09-09',
+    currencyId,
+    bomId: bom,
+    productId: outputProduct,
+    quantity: '2',
+  });
+  assert.equal(
+    (await opStatus('production-orders', production, 'Confirmed')).status,
+    200,
+  );
+  const consumption = await opCreate('material-consumption', {
+    reference: 'CONSUME-TEST',
+    date: '2026-09-09',
+    currencyId,
+    sourceId: production,
+    productId: material,
+    warehouseId: opWarehouse,
+    quantity: '4',
+  });
+  r = await opStatus('material-consumption', consumption, 'Posted');
+  check('Production consumption moves material value to work in progress', () =>
+    assert.equal(r.status, 200, JSON.stringify(r.data)),
+  );
+  const output = await opCreate('production-output', {
+    reference: 'OUTPUT-TEST',
+    date: '2026-09-09',
+    currencyId,
+    sourceId: production,
+    productId: outputProduct,
+    warehouseId: opWarehouse,
+    quantity: '2',
+  });
+  r = await opStatus('production-output', output, 'Posted');
+  check('Production output receives the consumed cost', () =>
+    assert.equal(r.status, 200, JSON.stringify(r.data)),
+  );
+  balances = (await call('operations/stock')).data;
+  check('Production conserves material cost in finished inventory', () => {
+    const finished = balances.find((r) => r.product_id === outputProduct);
+    assert.equal(finished.quantity, 2);
+    assert.equal(finished.value, 2000);
+  });
+  r = await call('operations/quotations', {
+    ...base,
+    reference: 'OVERRIDE-TEST',
+    lines: [
+      {
+        description: 'Service',
+        quantity: '1',
+        rate: '100',
+        gstRate: '18',
+        gstOverride: '10',
+      },
+    ],
+  });
+  check('Tax amount overrides require a reason', () =>
+    assert.equal(r.status, 400),
+  );
   r = await call('logout', {});
   r = await call('records');
   check('Logout revokes the session', () => assert.equal(r.status, 401));

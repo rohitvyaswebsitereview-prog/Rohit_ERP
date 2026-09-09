@@ -1,3 +1,15 @@
+# Operational expansion verification — 9 September 2026
+
+- TypeScript validation passed.
+- 83 disposable-database integration checks passed.
+- Production build passed. A bundle-size advisory remains; it is not a build error.
+- Fresh Drizzle baseline SQL executed successfully in an isolated SQLite database; generated expression indexes were corrected before any deployment.
+- Saved user database was backed up using SQLite backup and integrity checks before local startup.
+- Browser interaction and visual UAT were not requested or performed. HTTP route availability does not establish UI acceptance.
+- No original documents, local business data, uploaded files, account credentials or backups are committed.
+
+Historical validation notes follow.
+
 # Verification
 
 Local type checking and production bundling passed. The HTTP root and setup-status API returned HTTP 200. Browser interaction/visual UAT has not been performed; the local preview is open for the user. The production build reports a large-client-chunk warning, so route splitting is a future performance improvement.

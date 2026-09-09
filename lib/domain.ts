@@ -29,6 +29,7 @@ export const accountNames: Record<string, string> = {
   '1310': 'TCS Recoverable',
   '1320': 'TDS Receivable',
   '1400': 'Supplier Advances',
+  '1500': 'Work in Progress',
   '2100': 'Output GST',
   '2110': 'TDS Payable',
   '2120': 'TCS Payable',
@@ -165,12 +166,36 @@ export function dashboard(records: RecordData[], start: string, end: string) {
   });
   const ageingRows = (kind: string) =>
     records
-      .filter((r) => r.kind === kind && r.status === 'Posted' && r.date <= end)
+      .filter(
+        (r) =>
+          (kind === 'invoices'
+            ? ['invoices', 'domestic-invoices']
+            : ['bills', 'purchase-invoices', 'expenses']
+          ).includes(r.kind) &&
+          r.status === 'Posted' &&
+          r.date <= end,
+      )
       .map((r) => ({
         ...r,
-        outstanding: r.amount,
-        bucket: ageing(r.dueDate, end),
-      }));
+        outstanding:
+          r.amount -
+          records
+            .filter(
+              (p) =>
+                p.invoiceId === r.id &&
+                p.status === 'Posted' &&
+                p.date <= end &&
+                [
+                  'receipts',
+                  'payments',
+                  'customer-advance-adjustments',
+                  'supplier-advance-adjustments',
+                ].includes(p.kind),
+            )
+            .reduce((s, p) => s + p.amount, 0),
+        bucket: ageing(r.dueDate || r.date, end),
+      }))
+      .filter((r) => r.outstanding > 0);
   return {
     totals,
     trend: Object.values(trend),

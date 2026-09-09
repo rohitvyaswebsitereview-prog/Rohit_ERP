@@ -1,3 +1,4 @@
+import { opMap, permittedOperation } from '../operations';
 import { operations } from './operations';
 import { permittedMasters, masterItems } from '../masters';
 import { env } from 'cloudflare:workers';
@@ -85,7 +86,41 @@ function text(v: unknown, label: string, max = 200) {
     throw new Error(`${label} is required (maximum ${max} characters).`);
   return v.trim();
 }
-function safeRecord(r:any,u:any){ if(u.role!=='Viewer')return r; const out={...r}; for(const k of ['accountNumber','pan','gstin','customerGstin','taxRegistrations'])if(out[k])out[k]='••••'+String(out[k]).slice(-4);return out;}
+function safeRecord(r: any, u: any) {
+  if (u.role === 'Logistics') {
+    const out = { ...r };
+    for (const k of [
+      'cost',
+      'amount',
+      'defaultRate',
+      'creditLimit',
+      'accountNumber',
+      'bankAccounts',
+      'bankName',
+      'pan',
+      'gstin',
+      'currency',
+    ])
+      delete out[k];
+    return out;
+  }
+  if (u.role !== 'Viewer') return r;
+  const out = { ...r };
+  if (out.bankAccounts)
+    out.bankAccounts = out.bankAccounts.map((a: any) => ({
+      ...a,
+      number: '••••' + String(a.number || '').slice(-4),
+    }));
+  for (const k of [
+    'accountNumber',
+    'pan',
+    'gstin',
+    'customerGstin',
+    'taxRegistrations',
+  ])
+    if (out[k]) out[k] = '••••' + String(out[k]).slice(-4);
+  return out;
+}
 const decode = (r: any): RecordData => ({
   ...JSON.parse(r.data),
   id: r.id,
@@ -305,11 +340,15 @@ export async function handle(req: Request) {
         return json({ error: 'Cross-origin request blocked.' }, 403);
       if (!req.headers.get('Content-Type')?.includes('application/json'))
         return json({ error: 'JSON content type required.' }, 415);
-      if (Number(req.headers.get('Content-Length') || 0) > (path.startsWith('operations/') ? 7500000 : 100000))
+      if (
+        Number(req.headers.get('Content-Length') || 0) >
+        (path.startsWith('operations/') ? 7500000 : 100000)
+      )
         return json({ error: 'Request is too large.' }, 413);
     }
     const bodyText = req.method === 'GET' ? '' : await req.text();
-    if (bodyText.length > (path.startsWith('operations/') ? 7500000 : 100000)) return json({error:'Request is too large.'},413);
+    if (bodyText.length > (path.startsWith('operations/') ? 7500000 : 100000))
+      return json({ error: 'Request is too large.' }, 413);
     const b = bodyText ? JSON.parse(bodyText) : {};
     if (path === 'status' && req.method === 'GET')
       return json({
@@ -408,7 +447,8 @@ export async function handle(req: Request) {
         { error: 'Your session has expired. Please sign in again.' },
         401,
       );
-    if (path.startsWith('operations/')) return await operations(req,path,b,u,db(),(env as any).FILES);
+    if (path.startsWith('operations/'))
+      return await operations(req, path, b, u, db(), (env as any).FILES);
     if (path === 'me') return json({ user: u });
     if (path === 'logout' && req.method === 'POST') {
       const token =
@@ -536,10 +576,16 @@ export async function handle(req: Request) {
             )
             .bind(u.tenant_id)
             .all()
-        ).results.filter(
-          (r: any) =>
-            u.role === 'Admin' || permissions[u.role]?.includes(r.kind),
-        ).map((r:any)=>u.role==='Viewer'?{...r,detail:'Details restricted to authorised editors.'}:r),
+        ).results
+          .filter(
+            (r: any) =>
+              u.role === 'Admin' || permissions[u.role]?.includes(r.kind),
+          )
+          .map((r: any) =>
+            u.role === 'Viewer'
+              ? { ...r, detail: 'Details restricted to authorised editors.' }
+              : r,
+          ),
       );
     }
     if (path === 'notifications' && req.method === 'GET') {
@@ -579,7 +625,12 @@ export async function handle(req: Request) {
         return json({ error: 'Master not found or access unavailable.' }, 404);
       return json(item);
     }
-    const allowed = permissions[u.role] || [];
+    const allowed = [
+      ...(permissions[u.role] || []),
+      ...Object.values(opMap)
+        .filter((m) => permittedOperation(m, u.role))
+        .map((m) => m.key),
+    ];
     if (path === 'dashboard' && req.method === 'GET') {
       const fy = url.searchParams.get('fy') || '2026–27';
       const start = validDate(url.searchParams.get('start'));
@@ -590,7 +641,16 @@ export async function handle(req: Request) {
         (r) =>
           masterKinds.includes(r.kind) ||
           r.fy === fy ||
-          ['journal', 'invoices', 'bills'].includes(r.kind),
+          [
+            'journal',
+            'invoices',
+            'bills',
+            'domestic-invoices',
+            'purchase-invoices',
+            'expenses',
+            'receipts',
+            'payments',
+          ].includes(r.kind),
       );
       const result = dashboard(
         scoped.filter((r) => allowed.includes(r.kind)),
@@ -610,7 +670,11 @@ export async function handle(req: Request) {
         u.tenant_id,
         url.searchParams.get('fy') || undefined,
       );
-      return json(all.filter((r) => allowed.includes(r.kind)).map(r=>safeRecord(r,u)));
+      return json(
+        all
+          .filter((r) => allowed.includes(r.kind))
+          .map((r) => safeRecord(r, u)),
+      );
     }
     if (path === 'search' && req.method === 'GET') {
       const q = (url.searchParams.get('q') || '').toLowerCase().slice(0, 150);
@@ -629,7 +693,8 @@ export async function handle(req: Request) {
                   .includes(q),
               ),
           )
-          .slice(0, 40),
+          .slice(0, 40)
+          .map((r) => safeRecord(r, u)),
       );
     }
     const m = path.match(
@@ -648,6 +713,17 @@ export async function handle(req: Request) {
         const d = await validate(kind, b, u),
           record = id();
         if (kind === 'movements') {
+          if (
+            await db()
+              .prepare(
+                'SELECT 1 FROM stock_balances WHERE tenant_id=? AND product_id=? LIMIT 1',
+              )
+              .bind(u.tenant_id, d.productId)
+              .first()
+          )
+            throw new Error(
+              'Use Stock Adjustment or Stock Transfer for valued inventory.',
+            );
           // One conditional INSERT makes issue validation atomic across concurrent requests.
           const qty = d.direction === 'Issue' ? -d.quantity : d.quantity;
           const statement = db()
@@ -701,7 +777,11 @@ export async function handle(req: Request) {
         .first<any>();
       if (!raw) return json({ error: 'Record not found.' }, 404);
       const r = decode(raw);
-      if(r.operation && req.method !== 'GET') return json({error:'Use the document workspace to change this record.'},409);
+      if (r.operation && req.method !== 'GET')
+        return json(
+          { error: 'Use the document workspace to change this record.' },
+          409,
+        );
       if (
         req.method === 'POST' &&
         action === 'post' &&

@@ -374,5 +374,25 @@ const mastersModule = modules.find((m) => m.key === 'masters');
 if (mastersModule) mastersModule.items = [];
 for (const item of masterItems) titles[item.route] = item.label;
 
-for(const [route,key] of Object.entries(operationRoutes)){titles[route]=opMap[key].label; pendingMenuRoutes.delete(route);}
-for(const [key,m] of Object.entries(opMap)) titles[key]=m.label;
+for (const [route, key] of Object.entries(operationRoutes)) {
+  titles[route] = opMap[key].label;
+  pendingMenuRoutes.delete(route);
+}
+for (const [key, m] of Object.entries(opMap)) titles[key] = m.label;
+
+modules
+  .find((m) => m.key === 'administration')
+  ?.items.push(['', 'approvals', 'Approval Requests']);
+modules
+  .find((m) => m.key === 'finance')
+  ?.items.push(['', 'approvals', 'Approval Requests']);
+
+for (const key of [
+  'customer-advance-adjustments',
+  'supplier-advance-adjustments',
+  'customer-advance-refunds',
+  'supplier-advance-refunds',
+])
+  modules
+    .find((m) => m.key === 'finance')
+    ?.items.push(['', key, opMap[key].label]);

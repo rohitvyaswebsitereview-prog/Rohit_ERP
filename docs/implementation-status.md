@@ -1,3 +1,9 @@
+# Latest status — 9 September 2026
+
+The operational expansion now implements the Masters forms and enables all sidebar pages. See [Changes review](changes-review.md) for exact behavior, financial rules, validation, and remaining gaps. The historical phase table below predates this release and is retained as background, not the current completion checklist.
+
+The full-scale enterprise target is **not yet complete**. Current checks cover authentication, permissions, stock, invoice conversion, ledger posting/reversal, receipt limits, uploads and Word generation. Browser UAT and advanced settlement/statutory workflows remain outstanding.
+
 # Implementation status and delivery phases
 
 This release starts the ERP build and prioritises the uploaded login, dashboard and shell. “Implemented” means locally executable; it does not mean production-certified.

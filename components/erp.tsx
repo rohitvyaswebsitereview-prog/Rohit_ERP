@@ -1,9 +1,21 @@
 'use client';
 import Masters from './masters';
 import Operations from './operations';
-import {opMap, operationRoutes} from '@/lib/operations';
-import {OperationReports,OperationHub,reportRoutes} from './operation-reports';
-for(const [route,config] of Object.entries(reportRoutes)){pendingMenuRoutes.delete(route);titles[route]=config.title;}
+import OperationAdmin from './operation-admin';
+import OperationStock from './operation-stock';
+import OperationalOverview from './operational-overview';
+import { opMap, operationRoutes, permittedOperation } from '@/lib/operations';
+import {
+  OperationReports,
+  OperationHub,
+  reportRoutes,
+} from './operation-reports';
+for (const [route, config] of Object.entries(reportRoutes)) {
+  pendingMenuRoutes.delete(route);
+  titles[route] = config.title;
+}
+for (const r of ['administration-permissions', 'administration-login-security'])
+  pendingMenuRoutes.delete(r);
 
 import { masterItems } from '@/lib/masters';
 import { useEffect, useState, useCallback } from 'react';
@@ -139,7 +151,14 @@ function AppSidebar({
     go(r);
     setOpenMobile(false);
   };
-  const item = (m: (typeof modules)[number]) => {
+  const item = (original: (typeof modules)[number]) => {
+    const m = {
+      ...original,
+      items: original.items.filter(([, r]) => {
+        const target = opMap[operationRoutes[r] || r];
+        return !target || permittedOperation(target, role);
+      }),
+    };
     const Icon = m.icon;
     const owner = modules.find((module) =>
       module.items.some((i) => i[1] === route),
@@ -355,10 +374,10 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
   const refresh = () => setRevision((n) => n + 1);
   const go = useCallback(
     (r: string, f = '', range: { from?: string; to?: string } = {}) => {
-      const [base,queryString='']=r.split('?');
+      const [base, queryString = ''] = r.split('?');
       setRoute(base);
       setFilter(f);
-      const extra=new URLSearchParams(queryString);
+      const extra = new URLSearchParams(queryString);
       window.history.pushState(
         {},
         '',
@@ -672,22 +691,25 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
           )}
           {route === 'dashboard' ? (
             validRange ? (
-              <Dashboard
-                fy={fy}
-                start={start}
-                end={end}
-                revision={revision}
-                go={(r, f) =>
-                  go(r, f, {
-                    from: ['sales-report', 'profitability'].includes(r)
-                      ? start
-                      : '',
-                    to: end,
-                  })
-                }
-                records={records}
-                role={user.role}
-              />
+              <>
+                <OperationalOverview revision={revision} go={go} />
+                <Dashboard
+                  fy={fy}
+                  start={start}
+                  end={end}
+                  revision={revision}
+                  go={(r, f) =>
+                    go(r, f, {
+                      from: ['sales-report', 'profitability'].includes(r)
+                        ? start
+                        : '',
+                      to: end,
+                    })
+                  }
+                  records={records}
+                  role={user.role}
+                />
+              </>
             ) : (
               <div className="error-box">
                 This period falls outside FY {fy}. Select a different period or
@@ -873,33 +895,47 @@ function PageContent({
       </div>
     );
   if (route === 'masters') return <Masters go={go} />;
-  const operationKind=operationRoutes[route]||route;
-  if(opMap[operationKind]) return <Operations key={operationKind} kind={operationKind} user={user} fy={fy} go={go} refreshParent={refresh} initialId={typeof window!=='undefined'?new URLSearchParams(window.location.search).get('record')||undefined:undefined}/>;
-  if(reportRoutes[route]) return <OperationReports route={route} fy={fy} go={go}/>;
-  if(route==='import'||route==='production') return <OperationHub group={route==='import'?'Import':'Production'} go={go}/>;
-  if (['import', 'production'].includes(route))
+  if (
+    ['administration-permissions', 'administration-login-security'].includes(
+      route,
+    )
+  )
+    return <OperationAdmin route={route} />;
+  if (
+    [
+      'inventory-stock-register',
+      'inventory-yard-location-stock',
+      'inventory-inventory-valuation',
+      'inventory-inventory-reports',
+    ].includes(route)
+  )
+    return <OperationStock />;
+  const operationKind = operationRoutes[route] || route;
+  if (opMap[operationKind])
     return (
-      <section className="widget">
-        <Blank
-          title="Detailed workflow specification needed"
-          detail={
-            route === 'import'
-              ? 'The source confirms an Import module. Bill of Entry, customs, settlement and import-cost screens were proposals, not recovered specifications.'
-              : 'The source confirms Production and BOM. Scheduling, material consumption and output rules remain to be specified.'
-          }
-        />
-        <div className="scope-note">
-          <h3>Planned next steps</h3>
-          <p>
-            {route === 'import'
-              ? 'Define import orders, shipment links, document fields, customs costs and settlement rules.'
-              : 'Define BOM versions, production orders, material consumption, output and costing rules.'}
-          </p>
-          <button className="text-link" onClick={() => go('help')}>
-            View the implementation guide <ArrowUpRight size={16} />
-          </button>
-        </div>
-      </section>
+      <Operations
+        key={operationKind}
+        kind={operationKind}
+        user={user}
+        fy={fy}
+        go={go}
+        refreshParent={refresh}
+        initialId={
+          typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('record') ||
+              undefined
+            : undefined
+        }
+      />
+    );
+  if (reportRoutes[route])
+    return <OperationReports route={route} fy={fy} go={go} />;
+  if (route === 'import' || route === 'production')
+    return (
+      <OperationHub
+        group={route === 'import' ? 'Import' : 'Production'}
+        go={go}
+      />
     );
   if (route === 'profile')
     return (
@@ -1360,7 +1396,8 @@ function Help() {
       <ol>
         <li>
           <strong>Set up your masters.</strong> Add customers, vendors, products
-          and warehouses. These records are shared across modules.
+          warehouses, currencies and commercial terms. These records feed
+          transaction forms.
         </li>
         <li>
           <strong>Track your operations.</strong> Create sales orders, define
@@ -1373,7 +1410,8 @@ function Help() {
         </li>
         <li>
           <strong>Record physical stock.</strong> Stock receipts add quantity;
-          issues cannot exceed available stock. Valuation is entered separately.
+          issues cannot exceed available stock. Purchase and sale postings
+          maintain weighted-average inventory value.
         </li>
         <li>
           <strong>Monitor your dashboard.</strong> Choose a financial year and
@@ -1386,20 +1424,31 @@ function Help() {
           Register.
         </li>
       </ol>
-      <h2>What is included now</h2>
+      <h2>Working with transactions</h2>
       <p>
-        Local account setup and sign-in, roles, organisation isolation, the
-        specified application shell and dashboard, global search, order
-        progress, basic masters and registers, balanced journals, CSV exports,
-        document links and an append-only audit log.
+        Each operational page provides search, creation, record details,
+        permitted status actions, documents and audit history. Edit draft
+        documents before posting. Posted financial records require reversal
+        instead of silent changes.
       </p>
-      <h2>What comes next</h2>
       <p>
-        Detailed tax and export rules, statutory portal integrations, invoice
-        lines and cost allocation, settlements and bank reconciliation, purchase
-        three-way matching, document generation and uploads, payroll, production
-        and import workflows, approval rules, SSO and MFA. These require further
-        module specifications and implementation.
+        Use the Finance pages to record receipts, payments, advance adjustments
+        and refunds. Each settlement links to its invoice or advance and cannot
+        exceed the available balance.
+      </p>
+      <h2>Documents and communication</h2>
+      <p>
+        Upload supporting files from any record's Documents tab. Add a document
+        template in Masters and generate a Word document from saved transaction
+        values. Print / PDF uses your browser's print dialog. Prepare email
+        draft opens your mail application; you review and send it yourself.
+      </p>
+      <h2>External services</h2>
+      <p>
+        E-invoice, E-way bill and eBRC pages store references issued by the
+        relevant services. Government submission, carrier tracking feeds, bank
+        feeds and email delivery are not connected. Enter rates and review your
+        tax treatment before posting.
       </p>
       <h2>Financial definitions</h2>
       <p>

@@ -1,76 +1,1354 @@
 'use client';
-import {useEffect,useState} from 'react';
-import {Plus,ArrowLeft,Download,Search,FileText,MoreHorizontal,Printer,Mail,Trash2,Upload,ChevronRight} from 'lucide-react';
-import {Button} from '@/components/ui/button';
-import {Input} from '@/components/ui/input';
-import {Tabs,TabsList,TabsTrigger,TabsContent} from '@/components/ui/tabs';
-import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
-import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem} from '@/components/ui/dropdown-menu';
-import {Table,TableHeader,TableHead,TableRow,TableBody,TableCell} from '@/components/ui/table';
-import {api,Blank,Loading,Status,exportCSV,today,money} from './erp-ui';
-import {opMap,initialStatus,calculateLines,permittedOperation} from '@/lib/operations';
-import type {OpField,OpModule} from '@/lib/operations';
-const refs:Record<string,string[]>={'sales-invoice':['invoices','domestic-invoices'],'purchase-payable':['purchase-invoices','expenses','bills'],'delivery-source':['invoices','domestic-invoices','purchase-invoices']};
-const label=(r:any)=>r.name||r.reference||r.id;
-const emptyLine=()=>({productId:'',description:'',quantity:'1',rate:'0',gstRate:'0',tcsRate:'0',tdsRate:'0',charges:'0',roundOff:'0',serialNumbers:''});
-function SelectField({field,value,onChange,data,disabled=false}:{field:OpField;value:any;onChange:(v:string)=>void;data:any[];disabled?:boolean}){
- const [query,setQuery]=useState('');
- const choices=field.source?data.filter(r=>(refs[field.source!]||[field.source]).includes(r.kind)&&(!['Inactive','Cancelled','Reversed','Blocked'].includes(r.status)||r.id===value)):[];
- return <label className="field"><span>{field.label}{field.required?' *':''}</span>{choices.length>10&&<Input aria-label={'Search '+field.label} placeholder="Find an option…" value={query} onChange={e=>setQuery(e.target.value)}/>}
- <select value={value||''} required={field.required} disabled={disabled} onChange={e=>onChange(e.target.value)}><option value="">Select {field.label.toLowerCase()}</option>{field.options?.map(v=><option key={v}>{v}</option>)}{choices.filter(r=>r.id===value||label(r).toLowerCase().includes(query.toLowerCase())).map(r=><option key={r.id} value={r.id}>{label(r)}</option>)}</select></label>;
+import { useEffect, useState } from 'react';
+import {
+  Plus,
+  ArrowLeft,
+  Download,
+  Search,
+  FileText,
+  MoreHorizontal,
+  Printer,
+  Mail,
+  Trash2,
+  Upload,
+  ChevronRight,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
+import {
+  Table,
+  TableHeader,
+  TableHead,
+  TableRow,
+  TableBody,
+  TableCell,
+} from '@/components/ui/table';
+import { api, Blank, Loading, Status, exportCSV, today, money } from './erp-ui';
+import {
+  opMap,
+  initialStatus,
+  calculateLines,
+  permittedOperation,
+} from '@/lib/operations';
+import type { OpField, OpModule } from '@/lib/operations';
+const refs: Record<string, string[]> = {
+  'approval-source': Object.values(opMap)
+    .filter((m) => m.posting)
+    .map((m) => m.key),
+  'sales-invoice': ['invoices', 'domestic-invoices'],
+  'purchase-payable': ['purchase-invoices', 'expenses', 'bills'],
+  'delivery-source': ['invoices', 'domestic-invoices', 'purchase-invoices'],
+};
+const label = (r: any) => r.name || r.reference || r.id;
+const emptyLine = () => ({
+  productId: '',
+  description: '',
+  quantity: '1',
+  rate: '0',
+  gstRate: '0',
+  tcsRate: '0',
+  tdsRate: '0',
+  charges: '0',
+  roundOff: '0',
+  serialNumbers: '',
+});
+function SelectField({
+  field,
+  value,
+  onChange,
+  data,
+  disabled = false,
+}: {
+  field: OpField;
+  value: any;
+  onChange: (v: string) => void;
+  data: any[];
+  disabled?: boolean;
+}) {
+  const [query, setQuery] = useState('');
+  const choices = field.source
+    ? data.filter(
+        (r) =>
+          (refs[field.source!] || [field.source]).includes(r.kind) &&
+          (!['Inactive', 'Cancelled', 'Reversed', 'Blocked'].includes(
+            r.status,
+          ) ||
+            r.id === value),
+      )
+    : [];
+  return (
+    <label className="field">
+      <span>
+        {field.label}
+        {field.required ? ' *' : ''}
+      </span>
+      {choices.length > 10 && (
+        <Input
+          aria-label={'Search ' + field.label}
+          placeholder="Find an option…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
+      <select
+        value={value || ''}
+        required={field.required}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">Select {field.label.toLowerCase()}</option>
+        {field.options?.map((v) => (
+          <option key={v}>{v}</option>
+        ))}
+        {choices
+          .filter(
+            (r) =>
+              r.id === value ||
+              label(r).toLowerCase().includes(query.toLowerCase()),
+          )
+          .map((r) => (
+            <option key={r.id} value={r.id}>
+              {label(r)}
+            </option>
+          ))}
+      </select>
+    </label>
+  );
 }
-export default function Operations({kind,user,fy,go,initialId,refreshParent}:{kind:string;user:any;fy:string;go:(r:string)=>void;initialId?:string;refreshParent:()=>void}){
- const m=opMap[kind];const [data,setData]=useState<any[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[query,setQuery]=useState(''),[status,setStatus]=useState('All'),[selected,setSelected]=useState<string|null>(initialId||null),[detail,setDetail]=useState<any>(null),[editing,setEditing]=useState(false),[draft,setDraft]=useState<any>({}),[tab,setTab]=useState('Summary'),[busy,setBusy]=useState(false),[action,setAction]=useState<any>(null),[reason,setReason]=useState(''),[newRef,setNewRef]=useState(''),[revision,setRevision]=useState(0),[page,setPage]=useState(0),[documents,setDocuments]=useState<any[]>([]);
- const canWrite=m&&permittedOperation(m,user.role,true);const reload=()=>{setRevision(n=>n+1);refreshParent();};
- useEffect(()=>{setSelected(initialId||null);setDetail(null);setEditing(false);setQuery('');setStatus('All');setPage(0);},[kind,initialId]);
- useEffect(()=>{let live=true;setLoading(true);setError('');api('operations/data').then(d=>{if(live)setData(d);}).catch(e=>live&&setError(e.message)).finally(()=>live&&setLoading(false));return()=>{live=false};},[kind,revision]);
- useEffect(()=>{if(!selected){setDetail(null);return;}let live=true;setDetail(null);api(`operations/${kind}/${selected}`).then(d=>{if(live){setDetail(d);setDocuments(d.documents);}}).catch(e=>live&&setError(e.message));return()=>{live=false};},[kind,selected,revision]);
- if(!m)return <Blank title="Page unavailable"/>;
- if(!permittedOperation(m,user.role))return <Blank title="Access restricted" detail="Your role does not have access to this page."/>;
- const rows=data.filter(r=>r.kind===kind&&(m.master||r.fy===fy)).filter(r=>(status==='All'||(r.status||initialStatus(m))===status)&&JSON.stringify(r).toLowerCase().includes(query.toLowerCase()));
- const record=detail?.record;
- const edit=(r?:any)=>{setError('');const d=r?{...r}:Object.fromEntries(m.fields.map(f=>[f.key,f.key==='date'?today():'']));if(r&&!m.master&&!m.lines&&r.amount)d.amount=(r.amount/100).toFixed(2);d.lines=r?.lines?.map((l:any)=>({...l}))||[emptyLine()];d.reason='';setDraft(d);setEditing(true);setTab('Basic');};
- const set=(key:string,value:any)=>setDraft((d:any)=>({...d,[key]:value}));
- const save=async(e:React.FormEvent)=>{e.preventDefault();setBusy(true);setError('');try{const result=await api(`operations/${kind}${selected?'/'+selected+'/save':''}`,{...draft,version:record?.version});setSelected(result.id);setEditing(false);setTab('Summary');reload();}catch(e:any){setError(e.message);}finally{setBusy(false);}};
- const run=async()=>{setBusy(true);setError('');try{const result=await api(`operations/${kind}/${selected}/${action.type}`,{version:record.version,reason,status:action.status,target:action.target,reference:newRef});setAction(null);setReason('');setNewRef('');if(result.kind){go(result.kind);setSelected(null);}else reload();}catch(e:any){setError(e.message);}finally{setBusy(false);}};
- const print=async()=>{setError('');try{await api(`operations/${kind}/${selected}/print`,{});setTab('Summary');requestAnimationFrame(()=>window.print());}catch(e:any){setError(e.message);}};
- const email=async()=>{try{await api(`operations/${kind}/${selected}/email-draft`,{});const partner=data.find(r=>r.id===record.partnerId);const template=data.find(r=>r.kind==='master-email-templates'&&r.status==='Active');const replace=(s:string)=>s.replaceAll('{{reference}}',label(record)).replaceAll('{{company}}',"Rohit's ERP").replaceAll('{{date}}',record.date||'').replaceAll('{{total}}',money(record.amount||0,record.currency||'INR'));window.location.href=`mailto:${encodeURIComponent(partner?.email||'')}?subject=${encodeURIComponent(replace(template?.subject||`${m.label}: {{reference}}`))}&body=${encodeURIComponent(replace(template?.body||'Please find the details for {{reference}}.\n\nRegards,\n{{company}}'))}`;}catch(e:any){setError(e.message);}};
- const display=(key:string,value:any)=>{const field=m.fields.find(f=>f.key===key);return field?.source?label(data.find(r=>r.id===value)||{name:value}):String(value??'—');};
- const sections=[...new Set(m.fields.map(f=>f.section||'Basic'))];
- const input=(f:OpField)=><div key={f.key} className={f.type==='textarea'?'op-wide':''}>{f.type==='reference'||f.type==='select'?<SelectField field={f} value={draft[f.key]} onChange={v=>set(f.key,v)} data={data}/>:<label className="field"><span>{f.label}{f.required?' *':''}</span>{f.type==='textarea'?<textarea rows={4} value={draft[f.key]||''} onChange={e=>set(f.key,e.target.value)} required={f.required}/>:<Input type={f.type||'text'} step={f.type==='number'?'0.01':undefined} min={f.type==='number'?'0':undefined} value={draft[f.key]??''} onChange={e=>set(f.key,e.target.value)} required={f.required}/>}</label>}</div>;
- let totals:any[]=[];try{totals=calculateLines(draft.lines||[]);}catch{}
- const actionStates=m.posting?{Draft:['Posted','Cancelled'],Posted:['Reversed'],Reversed:[],Cancelled:[]}:m.transitions;
- return <div className="op-workspace">
- {error&&<div className="error-box" role="alert">{error}<Button variant="outline" onClick={()=>setRevision(n=>n+1)}>Reload</Button></div>}
- {loading&&!data.length?<Loading/>:editing?<form onSubmit={save} className="widget op-editor">
- <div className="op-heading"><div><span className="op-eyebrow">{selected?'Edit record':'New record'}</span><h2>{m.label}</h2></div><div className="inline-actions"><Button type="button" variant="outline" onClick={()=>{setEditing(false);setError('');}}>Cancel</Button><Button disabled={busy}>{busy?'Saving…':'Save record'}</Button></div></div>
- <Tabs value={tab} onValueChange={v=>setTab(String(v))}><TabsList className="op-tabs" variant="line">{[...sections,...(m.lines?['Lines','Cost breakup']:[])].map(s=><TabsTrigger key={s} value={s}>{s}</TabsTrigger>)}</TabsList>
- {sections.map(s=><TabsContent key={s} value={s} keepMounted><div className="op-fields">{m.fields.filter(f=>(f.section||'Basic')===s).map(input)}</div></TabsContent>)}
- {m.lines&&<><TabsContent value="Lines" keepMounted><div className="op-line-list">{(draft.lines||[]).map((l:any,i:number)=><section className="op-line" key={i}><header><strong>Line {i+1}</strong><Button type="button" variant="ghost" aria-label={'Remove line '+(i+1)} onClick={()=>set('lines',draft.lines.filter((_:any,n:number)=>n!==i))}><Trash2 size={16}/></Button></header><div className="op-fields"><SelectField field={{key:'productId',label:'Equipment / product',source:'products'}} value={l.productId} data={data} onChange={v=>{const product=data.find(r=>r.id===v);set('lines',draft.lines.map((x:any,n:number)=>n===i?{...x,productId:v,description:product?.name||'',rate:product?.defaultRate||x.rate,gstRate:product?.gstRate||x.gstRate}:x));}}/>{[['description','Description'],['quantity','Quantity'],['rate','Unit price'],['gstRate','GST %'],['tcsRate','TCS %'],['tdsRate','TDS %'],['charges','Other charges'],['roundOff','Round off'],['serialNumbers','Serial numbers (one per line)']].map(([key,title])=><label className="field" key={key}><span>{title}</span><Input value={l[key]??''} type={['description','serialNumbers'].includes(key)?'text':'number'} step="any" onChange={e=>set('lines',draft.lines.map((x:any,n:number)=>n===i?{...x,[key]:e.target.value}:x))}/></label>)}</div></section>)}</div><Button type="button" variant="outline" onClick={()=>set('lines',[...draft.lines,emptyLine()])}><Plus size={16}/> Add line</Button></TabsContent>
- <TabsContent value="Cost breakup"><div className="op-note">Rates are supplied by your team. GST, TCS and TDS are calculated on the basic line value; review the applicable tax treatment before posting.</div><CostTable lines={totals} currency={data.find(r=>r.id===draft.currencyId)?.code||'INR'}/></TabsContent></>}
- </Tabs>{selected&&<label className="field op-reason"><span>Reason for change *</span><Input value={draft.reason||''} onChange={e=>set('reason',e.target.value)} required/></label>}
- </form>:selected?(!record?<Loading/>:<section className="widget op-detail">
- <div className="op-heading"><div><button className="text-link" onClick={()=>{setSelected(null);setError('');}}><ArrowLeft size={16}/> Back to {m.label}</button><h2>{label(record)}</h2><Status value={record.status||initialStatus(m)}/></div><div className="inline-actions op-screen-only">{canWrite&&(!m.posting||record.status==='Draft')&&<Button variant="outline" onClick={()=>edit(record)}>Edit</Button>}<Button variant="outline" onClick={print}><Printer size={16}/>Print / PDF</Button><DropdownMenu><DropdownMenuTrigger render={<Button variant="outline"/>}><MoreHorizontal size={18}/> Actions</DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={email}><Mail/> Prepare email draft</DropdownMenuItem><DropdownMenuItem onClick={()=>setTab('Documents')}><Upload/> Manage documents</DropdownMenuItem><DropdownMenuItem onClick={()=>setTab('Audit')}>View audit</DropdownMenuItem>{canWrite&&(actionStates[record.status||initialStatus(m)]||[]).map(s=><DropdownMenuItem key={s} onClick={()=>{setAction({type:'status',status:s});setReason('');}}>{s==='Posted'?'Post to ledger':s==='Reversed'?'Reverse posting':'Mark '+s}</DropdownMenuItem>)}{canWrite&&m.convert?.map(k=><DropdownMenuItem key={k} onClick={()=>{setAction({type:'convert',target:k});setReason('');setNewRef('');}}>Create {opMap[k]?.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div></div>
- <div className="op-print-brand">Rohit's ERP · {m.label}</div>
- <Tabs value={tab} onValueChange={v=>setTab(String(v))}><TabsList className="op-tabs op-screen-only" variant="line">{['Summary',...(m.lines?['Lines','Commercials']:[]),'Documents','Related records','Audit'].map(t=><TabsTrigger value={t} key={t}>{t}</TabsTrigger>)}</TabsList>
- <TabsContent value="Summary"><dl className="op-summary">{m.fields.filter(f=>record[f.key]).map(f=><div key={f.key}><dt>{f.label}</dt><dd>{f.key==='amount'&&!m.master?money(record.amount,record.currency||'INR'):display(f.key,record[f.key])}</dd></div>)}</dl>{m.lines&&<CostTable lines={record.lines||[]} currency={record.currency||'INR'}/>}<div className="op-record-meta">Created {new Date(record.created).toLocaleString('en-IN')} by {record.createdBy||'—'} · Updated {record.updatedAt?new Date(record.updatedAt).toLocaleString('en-IN'):'—'} by {record.updatedBy||'—'} · Version {record.version}</div></TabsContent>
- {m.lines&&<><TabsContent value="Lines"><CostTable lines={record.lines||[]} currency={record.currency||'INR'}/></TabsContent><TabsContent value="Commercials"><CostTable lines={record.lines||[]} currency={record.currency||'INR'}/><Settlement record={record} data={data}/></TabsContent></>}
- <TabsContent value="Documents"><Documents entity={record} module={m} documents={documents} canWrite={canWrite} reload={reload}/></TabsContent>
- <TabsContent value="Related records">{detail.related.length?<RecordLinks rows={detail.related} go={go} onOpen={(r)=>{if(r.kind===kind)setSelected(r.id);else go(r.kind+'?record='+r.id);}}/>:<Blank title="No linked records" detail="Conversions, payments and linked documents will appear here."/>}</TabsContent>
- <TabsContent value="Audit"><div className="op-audit">{detail.audit.map((a:any)=><article key={a.id}><span className="op-audit-dot"/><div><strong>{a.action}</strong><p>{a.actor||'System'} · {new Date(a.created).toLocaleString('en-IN')}</p><details><summary>Change details</summary><pre>{(()=>{try{return JSON.stringify(JSON.parse(a.detail),null,2)}catch{return a.detail}})()}</pre></details></div></article>)}</div></TabsContent></Tabs>
- </section>):<>
- <div className="op-toolbar"><div className="op-search"><Search size={17}/><Input aria-label={'Search '+m.label} placeholder={'Search '+m.label.toLowerCase()+'…'} value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></div><select aria-label="Filter by status" value={status} onChange={e=>{setStatus(e.target.value);setPage(0);}}>{['All',...Object.keys(actionStates)].map(s=><option key={s}>{s}</option>)}</select><div className="op-toolbar-spacer"/><Button variant="outline" onClick={()=>exportCSV(rows,m.label)} disabled={!rows.length}><Download size={16}/>Export</Button>{canWrite&&<Button onClick={()=>{setSelected(null);edit();}}><Plus size={16}/>New record</Button>}</div>
- <section className="widget op-register">{!rows.length?<Blank title={query||status!=='All'?'No matching records':'No '+m.label.toLowerCase()+' yet'} detail={query?'Try another search.':canWrite?'Create your first record to begin.':'Records created by your team will appear here.'}/>:<Table><TableHeader><TableRow>{[m.master?'Name':'Reference',...(m.master?[]:['Date','Partner']), 'Status',...(m.lines||m.posting?['Amount']:[]),'Actions'].map(h=><TableHead key={h}>{h}</TableHead>)}</TableRow></TableHeader><TableBody>{rows.slice(page*20,page*20+20).map(r=><TableRow key={r.id}><TableCell><button className="text-link" onClick={()=>{setSelected(r.id);setTab('Summary');}}>{label(r)}</button></TableCell>{!m.master&&<><TableCell>{r.date||'—'}</TableCell><TableCell>{data.find(p=>p.id===r.partnerId)?.name||'—'}</TableCell></>}<TableCell><Status value={r.status||initialStatus(m)}/></TableCell>{(m.lines||m.posting)&&<TableCell>{money(r.amount||0,r.currency||'INR')}</TableCell>}<TableCell><Button variant="ghost" onClick={()=>{setSelected(r.id);setTab('Summary');}}>View <ChevronRight size={14}/></Button></TableCell></TableRow>)}</TableBody></Table>}
- <footer className="op-pagination"><span>{rows.length} records{!m.master?' · FY '+fy:''}</span><div className="inline-actions"><Button variant="outline" disabled={page===0} onClick={()=>setPage(n=>n-1)}>Previous</Button><span>{page+1}</span><Button variant="outline" disabled={(page+1)*20>=rows.length} onClick={()=>setPage(n=>n+1)}>Next</Button></div></footer></section></>}
- <Dialog open={!!action} onOpenChange={open=>{if(!open&&!busy)setAction(null);}}><DialogContent><DialogTitle>{action?.type==='convert'?'Create '+opMap[action.target]?.label:'Change status to '+action?.status}</DialogTitle><DialogDescription>{['Cancelled','Reversed','Inactive','Blocked'].includes(action?.status)?'This changes how the record can be used. Active dependent records must be resolved first. History is retained.':'The action and your reason will be saved in the audit history.'}</DialogDescription>{action?.type==='convert'&&<label className="field"><span>New reference *</span><Input value={newRef} onChange={e=>setNewRef(e.target.value)}/></label>}<label className="field"><span>Reason *</span><Input value={reason} onChange={e=>setReason(e.target.value)}/></label>{error&&<p role="alert" className="error-box">{error}</p>}<div className="inline-actions"><Button variant="outline" onClick={()=>setAction(null)} disabled={busy}>Cancel</Button><Button disabled={busy||!reason.trim()||(action?.type==='convert'&&!newRef.trim())} onClick={run}>{busy?'Saving…':'Confirm'}</Button></div></DialogContent></Dialog>
- </div>;
+export default function Operations({
+  kind,
+  user,
+  fy,
+  go,
+  initialId,
+  refreshParent,
+}: {
+  kind: string;
+  user: any;
+  fy: string;
+  go: (r: string) => void;
+  initialId?: string;
+  refreshParent: () => void;
+}) {
+  const m = opMap[kind];
+  const [data, setData] = useState<any[]>([]),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState(''),
+    [query, setQuery] = useState(''),
+    [status, setStatus] = useState('All'),
+    [selected, setSelected] = useState<string | null>(initialId || null),
+    [detail, setDetail] = useState<any>(null),
+    [editing, setEditing] = useState(false),
+    [draft, setDraft] = useState<any>({}),
+    [tab, setTab] = useState('Summary'),
+    [busy, setBusy] = useState(false),
+    [action, setAction] = useState<any>(null),
+    [reason, setReason] = useState(''),
+    [newRef, setNewRef] = useState(''),
+    [revision, setRevision] = useState(0),
+    [page, setPage] = useState(0),
+    [documents, setDocuments] = useState<any[]>([]);
+  const canWrite = m && permittedOperation(m, user.role, true);
+  const reload = () => {
+    setRevision((n) => n + 1);
+    refreshParent();
+  };
+  useEffect(() => {
+    setSelected(initialId || null);
+    setDetail(null);
+    setEditing(false);
+    setQuery('');
+    setStatus('All');
+    setPage(0);
+  }, [kind, initialId]);
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setError('');
+    api('operations/data')
+      .then((d) => {
+        if (live) setData(d);
+      })
+      .catch((e) => live && setError(e.message))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+  }, [kind, revision]);
+  useEffect(() => {
+    if (!selected) {
+      setDetail(null);
+      return;
+    }
+    let live = true;
+    setDetail(null);
+    api(`operations/${kind}/${selected}`)
+      .then((d) => {
+        if (live) {
+          setDetail(d);
+          setDocuments(d.documents);
+        }
+      })
+      .catch((e) => live && setError(e.message));
+    return () => {
+      live = false;
+    };
+  }, [kind, selected, revision]);
+  if (!m) return <Blank title="Page unavailable" />;
+  if (!permittedOperation(m, user.role))
+    return (
+      <Blank
+        title="Access restricted"
+        detail="Your role does not have access to this page."
+      />
+    );
+  const rows = data
+    .filter((r) => r.kind === kind && (m.master || r.fy === fy))
+    .filter(
+      (r) =>
+        (status === 'All' || (r.status || initialStatus(m)) === status) &&
+        JSON.stringify(r).toLowerCase().includes(query.toLowerCase()),
+    );
+  const record = detail?.record;
+  const edit = (r?: any) => {
+    setError('');
+    const d = r
+      ? { ...r }
+      : Object.fromEntries(
+          m.fields.map((f) => [f.key, f.key === 'date' ? today() : '']),
+        );
+    for (const f of m.fields)
+      if (f.type === 'rows' && !Array.isArray(d[f.key])) d[f.key] = [];
+    if (r && !m.master && !m.lines && r.amount)
+      d.amount = (r.amount / 100).toFixed(2);
+    d.lines = r?.lines?.map((l: any) => ({ ...l })) || [emptyLine()];
+    d.reason = '';
+    setDraft(d);
+    setEditing(true);
+    setTab('Basic');
+  };
+  const set = (key: string, value: any) =>
+    setDraft((d: any) => ({ ...d, [key]: value }));
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api(
+        `operations/${kind}${selected ? '/' + selected + '/save' : ''}`,
+        { ...draft, version: record?.version },
+      );
+      setSelected(result.id);
+      setEditing(false);
+      setTab('Summary');
+      reload();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const run = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api(
+        `operations/${kind}/${selected}/${action.type}`,
+        {
+          version: record.version,
+          reason,
+          status: action.status,
+          target: action.target,
+          reference: newRef,
+        },
+      );
+      setAction(null);
+      setReason('');
+      setNewRef('');
+      if (result.kind) {
+        go(result.kind);
+        setSelected(null);
+      } else reload();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const print = async () => {
+    setError('');
+    try {
+      await api(`operations/${kind}/${selected}/print`, {});
+      setTab('Summary');
+      requestAnimationFrame(() => window.print());
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+  const email = async () => {
+    try {
+      await api(`operations/${kind}/${selected}/email-draft`, {});
+      const partner = data.find((r) => r.id === record.partnerId);
+      const template = data.find(
+        (r) => r.kind === 'master-email-templates' && r.status === 'Active',
+      );
+      const replace = (s: string) =>
+        s
+          .replaceAll('{{reference}}', label(record))
+          .replaceAll('{{company}}', "Rohit's ERP")
+          .replaceAll('{{date}}', record.date || '')
+          .replaceAll(
+            '{{total}}',
+            money(record.amount || 0, record.currency || 'INR'),
+          );
+      window.location.href = `mailto:${encodeURIComponent(partner?.email || '')}?subject=${encodeURIComponent(replace(template?.subject || `${m.label}: {{reference}}`))}&body=${encodeURIComponent(replace(template?.body || 'Please find the details for {{reference}}.\n\nRegards,\n{{company}}'))}`;
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+  const display = (key: string, value: any) => {
+    const field = m.fields.find((f) => f.key === key);
+    return field?.source
+      ? label(data.find((r) => r.id === value) || { name: value })
+      : String(value ?? '—');
+  };
+  const sections = [...new Set(m.fields.map((f) => f.section || 'Basic'))];
+  const input = (f: OpField) => (
+    <div
+      key={f.key}
+      className={['textarea', 'rows'].includes(f.type || '') ? 'op-wide' : ''}
+    >
+      {f.type === 'rows' ? (
+        <ChildRows
+          field={f}
+          value={Array.isArray(draft[f.key]) ? draft[f.key] : []}
+          onChange={(v) => set(f.key, v)}
+        />
+      ) : f.type === 'reference' || f.type === 'select' ? (
+        <SelectField
+          field={f}
+          value={draft[f.key]}
+          onChange={(v) => set(f.key, v)}
+          data={data}
+        />
+      ) : (
+        <label className="field">
+          <span>
+            {f.label}
+            {f.required ? ' *' : ''}
+          </span>
+          {f.type === 'textarea' ? (
+            <textarea
+              rows={4}
+              value={draft[f.key] || ''}
+              onChange={(e) => set(f.key, e.target.value)}
+              required={f.required}
+            />
+          ) : (
+            <Input
+              type={f.type || 'text'}
+              step={f.type === 'number' ? '0.01' : undefined}
+              min={f.type === 'number' ? '0' : undefined}
+              value={draft[f.key] ?? ''}
+              onChange={(e) => set(f.key, e.target.value)}
+              required={f.required}
+            />
+          )}
+        </label>
+      )}
+    </div>
+  );
+  let totals: any[] = [];
+  try {
+    totals = calculateLines(draft.lines || []);
+  } catch {}
+  const actionStates = m.posting
+    ? {
+        Draft: ['Posted', 'Cancelled'],
+        Posted: ['Reversed'],
+        Reversed: [],
+        Cancelled: [],
+      }
+    : m.transitions;
+  return (
+    <div className="op-workspace">
+      {error && (
+        <div className="error-box" role="alert">
+          {error}
+          <Button variant="outline" onClick={() => setRevision((n) => n + 1)}>
+            Reload
+          </Button>
+        </div>
+      )}
+      {loading && !data.length ? (
+        <Loading />
+      ) : editing ? (
+        <form noValidate onSubmit={save} className="widget op-editor">
+          <div className="op-heading">
+            <div>
+              <span className="op-eyebrow">
+                {selected ? 'Edit record' : 'New record'}
+              </span>
+              <h2>{m.label}</h2>
+            </div>
+            <div className="inline-actions">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditing(false);
+                  setError('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button disabled={busy}>
+                {busy ? 'Saving…' : 'Save record'}
+              </Button>
+            </div>
+          </div>
+          <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
+            <TabsList className="op-tabs" variant="line">
+              {[...sections, ...(m.lines ? ['Lines', 'Cost breakup'] : [])].map(
+                (s) => (
+                  <TabsTrigger key={s} value={s}>
+                    {s}
+                  </TabsTrigger>
+                ),
+              )}
+            </TabsList>
+            {sections.map((s) => (
+              <TabsContent key={s} value={s} keepMounted>
+                <div className="op-fields">
+                  {m.fields
+                    .filter((f) => (f.section || 'Basic') === s)
+                    .map(input)}
+                </div>
+              </TabsContent>
+            ))}
+            {m.lines && (
+              <>
+                <TabsContent value="Lines" keepMounted>
+                  <div className="op-line-list">
+                    {(draft.lines || []).map((l: any, i: number) => (
+                      <section className="op-line" key={i}>
+                        <header>
+                          <strong>Line {i + 1}</strong>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            aria-label={'Remove line ' + (i + 1)}
+                            onClick={() =>
+                              set(
+                                'lines',
+                                draft.lines.filter(
+                                  (_: any, n: number) => n !== i,
+                                ),
+                              )
+                            }
+                          >
+                            <Trash2 size={16} />
+                          </Button>
+                        </header>
+                        <div className="op-fields">
+                          <SelectField
+                            field={{
+                              key: 'productId',
+                              label: 'Equipment / product',
+                              source: 'products',
+                            }}
+                            value={l.productId}
+                            data={data}
+                            onChange={(v) => {
+                              const product = data.find((r) => r.id === v);
+                              set(
+                                'lines',
+                                draft.lines.map((x: any, n: number) =>
+                                  n === i
+                                    ? {
+                                        ...x,
+                                        productId: v,
+                                        description: product?.name || '',
+                                        rate: product?.defaultRate || x.rate,
+                                        gstRate: product?.gstRate || x.gstRate,
+                                      }
+                                    : x,
+                                ),
+                              );
+                            }}
+                          />
+                          {[
+                            ['description', 'Description'],
+                            ['quantity', 'Quantity'],
+                            ['rate', 'Unit price'],
+                            ['gstRate', 'GST %'],
+                            ['tcsRate', 'TCS %'],
+                            ['tdsRate', 'TDS %'],
+                            ['charges', 'Other charges'],
+                            ['roundOff', 'Round off'],
+                            ['serialNumbers', 'Serial numbers (one per line)'],
+                            ['gstOverride', 'GST amount override'],
+                            ['tcsOverride', 'TCS amount override'],
+                            ['tdsOverride', 'TDS amount override'],
+                            ['overrideReason', 'Tax override reason'],
+                          ].map(([key, title]) => (
+                            <label className="field" key={key}>
+                              <span>{title}</span>
+                              <Input
+                                value={l[key] ?? ''}
+                                type={
+                                  [
+                                    'description',
+                                    'serialNumbers',
+                                    'overrideReason',
+                                  ].includes(key)
+                                    ? 'text'
+                                    : 'number'
+                                }
+                                step="any"
+                                onChange={(e) =>
+                                  set(
+                                    'lines',
+                                    draft.lines.map((x: any, n: number) =>
+                                      n === i
+                                        ? { ...x, [key]: e.target.value }
+                                        : x,
+                                    ),
+                                  )
+                                }
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => set('lines', [...draft.lines, emptyLine()])}
+                  >
+                    <Plus size={16} /> Add line
+                  </Button>
+                </TabsContent>
+                <TabsContent value="Cost breakup">
+                  <div className="op-note">
+                    Rates are supplied by your team. GST, TCS and TDS are
+                    calculated on the basic line value; review the applicable
+                    tax treatment before posting.
+                  </div>
+                  <CostTable
+                    lines={totals}
+                    currency={
+                      data.find((r) => r.id === draft.currencyId)?.code || 'INR'
+                    }
+                  />
+                </TabsContent>
+              </>
+            )}
+          </Tabs>
+          {selected && (
+            <label className="field op-reason">
+              <span>Reason for change *</span>
+              <Input
+                value={draft.reason || ''}
+                onChange={(e) => set('reason', e.target.value)}
+                required
+              />
+            </label>
+          )}
+        </form>
+      ) : selected ? (
+        !record ? (
+          <Loading />
+        ) : (
+          <section className="widget op-detail">
+            <div className="op-heading">
+              <div>
+                <button
+                  className="text-link"
+                  onClick={() => {
+                    setSelected(null);
+                    setError('');
+                  }}
+                >
+                  <ArrowLeft size={16} /> Back to {m.label}
+                </button>
+                <h2>{label(record)}</h2>
+                <Status value={record.status || initialStatus(m)} />
+              </div>
+              <div className="inline-actions op-screen-only">
+                {canWrite && (!m.posting || record.status === 'Draft') && (
+                  <Button variant="outline" onClick={() => edit(record)}>
+                    Edit
+                  </Button>
+                )}
+                <Button variant="outline" onClick={print}>
+                  <Printer size={16} />
+                  Print / PDF
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button variant="outline" />}>
+                    <MoreHorizontal size={18} /> Actions
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canWrite && (
+                      <DropdownMenuItem onClick={email}>
+                        <Mail /> Prepare email draft
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => setTab('Documents')}>
+                      <Upload /> Manage documents
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setTab('Audit')}>
+                      View audit
+                    </DropdownMenuItem>
+                    {canWrite &&
+                      (
+                        actionStates[record.status || initialStatus(m)] || []
+                      ).map((s) => (
+                        <DropdownMenuItem
+                          key={s}
+                          onClick={() => {
+                            setAction({ type: 'status', status: s });
+                            setReason('');
+                          }}
+                        >
+                          {s === 'Posted'
+                            ? 'Post to ledger'
+                            : s === 'Reversed'
+                              ? 'Reverse posting'
+                              : 'Mark ' + s}
+                        </DropdownMenuItem>
+                      ))}
+                    {canWrite &&
+                      m.convert?.map((k) => (
+                        <DropdownMenuItem
+                          key={k}
+                          onClick={() => {
+                            setAction({ type: 'convert', target: k });
+                            setReason('');
+                            setNewRef('');
+                          }}
+                        >
+                          Create {opMap[k]?.label}
+                        </DropdownMenuItem>
+                      ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+            <div className="op-print-brand">Rohit's ERP · {m.label}</div>
+            <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
+              <TabsList className="op-tabs op-screen-only" variant="line">
+                {[
+                  'Summary',
+                  ...(m.lines ? ['Lines', 'Commercials'] : []),
+                  'Documents',
+                  'Related records',
+                  'Audit',
+                ].map((t) => (
+                  <TabsTrigger value={t} key={t}>
+                    {t}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              <TabsContent value="Summary">
+                <dl className="op-summary">
+                  {m.fields
+                    .filter((f) => record[f.key])
+                    .map((f) => (
+                      <div key={f.key}>
+                        <dt>{f.label}</dt>
+                        <dd>
+                          {f.type === 'rows' ? (
+                            <ChildRows
+                              field={f}
+                              value={
+                                Array.isArray(record[f.key])
+                                  ? record[f.key]
+                                  : []
+                              }
+                              readOnly
+                              onChange={() => {}}
+                            />
+                          ) : f.key === 'amount' && !m.master ? (
+                            money(record.amount, record.currency || 'INR')
+                          ) : (
+                            display(f.key, record[f.key])
+                          )}
+                        </dd>
+                      </div>
+                    ))}
+                </dl>
+                {m.lines && (
+                  <CostTable
+                    lines={record.lines || []}
+                    currency={record.currency || 'INR'}
+                  />
+                )}
+                <div className="op-record-meta">
+                  Created {new Date(record.created).toLocaleString('en-IN')} by{' '}
+                  {record.createdBy || '—'} · Updated{' '}
+                  {record.updatedAt
+                    ? new Date(record.updatedAt).toLocaleString('en-IN')
+                    : '—'}{' '}
+                  by {record.updatedBy || '—'} · Version {record.version}
+                </div>
+              </TabsContent>
+              {m.lines && (
+                <>
+                  <TabsContent value="Lines">
+                    <CostTable
+                      lines={record.lines || []}
+                      currency={record.currency || 'INR'}
+                    />
+                  </TabsContent>
+                  <TabsContent value="Commercials">
+                    <CostTable
+                      lines={record.lines || []}
+                      currency={record.currency || 'INR'}
+                    />
+                    <Settlement record={record} data={data} />
+                  </TabsContent>
+                </>
+              )}
+              <TabsContent value="Documents">
+                <Documents
+                  entity={record}
+                  module={m}
+                  documents={documents}
+                  data={data}
+                  canWrite={canWrite}
+                  reload={reload}
+                />
+              </TabsContent>
+              <TabsContent value="Related records">
+                {detail.related.length ? (
+                  <RecordLinks
+                    rows={detail.related}
+                    go={go}
+                    onOpen={(r) => {
+                      if (r.kind === kind) setSelected(r.id);
+                      else go(r.kind + '?record=' + r.id);
+                    }}
+                  />
+                ) : (
+                  <Blank
+                    title="No linked records"
+                    detail="Conversions, payments and linked documents will appear here."
+                  />
+                )}
+              </TabsContent>
+              <TabsContent value="Audit">
+                <div className="op-audit">
+                  {detail.audit.map((a: any) => (
+                    <article key={a.id}>
+                      <span className="op-audit-dot" />
+                      <div>
+                        <strong>{a.action}</strong>
+                        <p>
+                          {a.actor || 'System'} ·{' '}
+                          {new Date(a.created).toLocaleString('en-IN')}
+                        </p>
+                        <details>
+                          <summary>Change details</summary>
+                          <pre>
+                            {(() => {
+                              try {
+                                return JSON.stringify(
+                                  JSON.parse(a.detail),
+                                  null,
+                                  2,
+                                );
+                              } catch {
+                                return a.detail;
+                              }
+                            })()}
+                          </pre>
+                        </details>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </section>
+        )
+      ) : (
+        <>
+          <div className="op-toolbar">
+            <div className="op-search">
+              <Search size={17} />
+              <Input
+                aria-label={'Search ' + m.label}
+                placeholder={'Search ' + m.label.toLowerCase() + '…'}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setPage(0);
+                }}
+              />
+            </div>
+            <select
+              aria-label="Filter by status"
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setPage(0);
+              }}
+            >
+              {['All', ...Object.keys(actionStates)].map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+            <div className="op-toolbar-spacer" />
+            <Button
+              variant="outline"
+              onClick={() => exportCSV(rows, m.label)}
+              disabled={!rows.length}
+            >
+              <Download size={16} />
+              Export
+            </Button>
+            {canWrite && (
+              <Button
+                onClick={() => {
+                  setSelected(null);
+                  edit();
+                }}
+              >
+                <Plus size={16} />
+                New record
+              </Button>
+            )}
+          </div>
+          <section className="widget op-register">
+            {!rows.length ? (
+              <Blank
+                title={
+                  query || status !== 'All'
+                    ? 'No matching records'
+                    : 'No ' + m.label.toLowerCase() + ' yet'
+                }
+                detail={
+                  query
+                    ? 'Try another search.'
+                    : canWrite
+                      ? 'Create your first record to begin.'
+                      : 'Records created by your team will appear here.'
+                }
+              />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {[
+                      m.master ? 'Name' : 'Reference',
+                      ...(m.master ? [] : ['Date', 'Partner']),
+                      'Status',
+                      ...(m.lines || m.posting ? ['Amount'] : []),
+                      'Actions',
+                    ].map((h) => (
+                      <TableHead key={h}>{h}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.slice(page * 20, page * 20 + 20).map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell>
+                        <button
+                          className="text-link"
+                          onClick={() => {
+                            setSelected(r.id);
+                            setTab('Summary');
+                          }}
+                        >
+                          {label(r)}
+                        </button>
+                      </TableCell>
+                      {!m.master && (
+                        <>
+                          <TableCell>{r.date || '—'}</TableCell>
+                          <TableCell>
+                            {data.find((p) => p.id === r.partnerId)?.name ||
+                              '—'}
+                          </TableCell>
+                        </>
+                      )}
+                      <TableCell>
+                        <Status value={r.status || initialStatus(m)} />
+                      </TableCell>
+                      {(m.lines || m.posting) && (
+                        <TableCell>
+                          {money(r.amount || 0, r.currency || 'INR')}
+                        </TableCell>
+                      )}
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            setSelected(r.id);
+                            setTab('Summary');
+                          }}
+                        >
+                          View <ChevronRight size={14} />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            <footer className="op-pagination">
+              <span>
+                {rows.length} records{!m.master ? ' · FY ' + fy : ''}
+              </span>
+              <div className="inline-actions">
+                <Button
+                  variant="outline"
+                  disabled={page === 0}
+                  onClick={() => setPage((n) => n - 1)}
+                >
+                  Previous
+                </Button>
+                <span>{page + 1}</span>
+                <Button
+                  variant="outline"
+                  disabled={(page + 1) * 20 >= rows.length}
+                  onClick={() => setPage((n) => n + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </footer>
+          </section>
+        </>
+      )}
+      <Dialog
+        open={!!action}
+        onOpenChange={(open) => {
+          if (!open && !busy) setAction(null);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>
+            {action?.type === 'convert'
+              ? 'Create ' + opMap[action.target]?.label
+              : 'Change status to ' + action?.status}
+          </DialogTitle>
+          <DialogDescription>
+            {['Cancelled', 'Reversed', 'Inactive', 'Blocked'].includes(
+              action?.status,
+            )
+              ? 'This changes how the record can be used. Active dependent records must be resolved first. History is retained.'
+              : 'The action and your reason will be saved in the audit history.'}
+          </DialogDescription>
+          {action?.type === 'convert' && (
+            <label className="field">
+              <span>New reference *</span>
+              <Input
+                value={newRef}
+                onChange={(e) => setNewRef(e.target.value)}
+              />
+            </label>
+          )}
+          <label className="field">
+            <span>Reason *</span>
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+          </label>
+          {error && (
+            <p role="alert" className="error-box">
+              {error}
+            </p>
+          )}
+          <div className="inline-actions">
+            <Button
+              variant="outline"
+              onClick={() => setAction(null)}
+              disabled={busy}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                busy ||
+                !reason.trim() ||
+                (action?.type === 'convert' && !newRef.trim())
+              }
+              onClick={run}
+            >
+              {busy ? 'Saving…' : 'Confirm'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
-function CostTable({lines,currency}:{lines:any[];currency:string}){return <div className="op-costs"><Table><TableHeader><TableRow>{['Item','Qty','Basic','GST','TCS','TDS','Charges','Round off','Total'].map(h=><TableHead key={h}>{h}</TableHead>)}</TableRow></TableHeader><TableBody>{lines.map((l,i)=><TableRow key={i}><TableCell>{l.description}</TableCell><TableCell>{l.quantity}</TableCell>{['basic','gst','tcs','tds','other','rounding','total'].map(k=><TableCell key={k}>{money(l[k]||0,currency)}</TableCell>)}</TableRow>)}</TableBody></Table><div className="op-total"><span>Document total</span><strong>{money(lines.reduce((s,l)=>s+(l.total||0),0),currency)}</strong></div></div>;}
-function Settlement({record,data}:{record:any;data:any[]}){const paid=data.filter(r=>r.invoiceId===record.id&&r.status==='Posted').reduce((s,r)=>s+r.amount,0);return <div className="op-summary"><div><dt>Invoice value</dt><dd>{money(record.amount||0,record.currency||'INR')}</dd></div><div><dt>Settled</dt><dd>{money(paid,record.currency||'INR')}</dd></div><div><dt>Outstanding</dt><dd>{money((record.amount||0)-paid,record.currency||'INR')}</dd></div></div>;}
-function RecordLinks({rows,go,onOpen}:{rows:any[];go:(s:string)=>void;onOpen?:(r:any)=>void}){return <div className="op-links">{rows.map(r=><button key={r.id} onClick={()=>onOpen?onOpen(r):go(r.kind)}><FileText size={18}/><span><strong>{label(r)}</strong><small>{opMap[r.kind]?.label}</small></span><Status value={r.status||'Active'}/><ChevronRight size={16}/></button>)}</div>;}
-function Documents({entity,module,documents,canWrite,reload}:{entity:any;module:OpModule;documents:any[];canWrite:boolean;reload:()=>void}){
- const [category,setCategory]=useState(module.documents[0]||'Supporting document'),[file,setFile]=useState<File|null>(null),[tags,setTags]=useState(''),[status,setStatus]=useState('Draft'),[error,setError]=useState(''),[busy,setBusy]=useState(false);
- const upload=async(e:React.FormEvent)=>{e.preventDefault();if(!file)return;setBusy(true);setError('');try{if(file.size>5*1024*1024)throw new Error('Choose a file up to 5 MB.');const content=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file);});await api(`operations/${entity.kind}/${entity.id}/document`,{category,filename:file.name,mime:file.type,content,status,tags});setFile(null);reload();}catch(e:any){setError(e.message);}finally{setBusy(false);}};
- return <div className="op-documents"><div className="op-checklist">{module.documents.map(c=><div key={c}><span>{c}</span><Status value={documents.some(d=>d.category===c)?'Uploaded':'Missing'}/></div>)}</div>{canWrite&&<form onSubmit={upload} className="op-upload"><label className="field"><span>Category</span><Input list="document-categories" value={category} onChange={e=>setCategory(e.target.value)} required/><datalist id="document-categories">{module.documents.map(c=><option key={c}>{c}</option>)}</datalist></label><label className="field"><span>File (up to 5 MB)</span><Input type="file" accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.docx,.xlsx" required onChange={e=>setFile(e.target.files?.[0]||null)}/></label><label className="field"><span>Status</span><select value={status} onChange={e=>setStatus(e.target.value)}>{['Draft','Final','Sent'].map(s=><option key={s}>{s}</option>)}</select></label><label className="field"><span>Tags</span><Input value={tags} onChange={e=>setTags(e.target.value)}/></label><Button disabled={busy||!file}>{busy?'Uploading…':'Upload document'}</Button></form>}{error&&<p className="error-box" role="alert">{error}</p>}
- {documents.length?<Table><TableHeader><TableRow>{['File','Category','Status','Version','Added by','Download'].map(h=><TableHead key={h}>{h}</TableHead>)}</TableRow></TableHeader><TableBody>{documents.map(d=><TableRow key={d.id}><TableCell>{d.filename}</TableCell><TableCell>{d.category}</TableCell><TableCell><Status value={d.status}/></TableCell><TableCell>{d.documentVersion}</TableCell><TableCell>{d.uploadedBy}</TableCell><TableCell><a className="text-link" href={'/api/v1/operations/documents/'+d.id} download><Download size={16}/>Download</a></TableCell></TableRow>)}</TableBody></Table>:<Blank title="No documents uploaded" detail="Add source documents, photos or supporting evidence. New uploads retain earlier versions."/>}</div>;
+function CostTable({ lines, currency }: { lines: any[]; currency: string }) {
+  return (
+    <div className="op-costs">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {[
+              'Item',
+              'Qty',
+              'Basic',
+              'GST',
+              'TCS',
+              'TDS',
+              'Charges',
+              'Round off',
+              'Total',
+            ].map((h) => (
+              <TableHead key={h}>{h}</TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {lines.map((l, i) => (
+            <TableRow key={i}>
+              <TableCell>{l.description}</TableCell>
+              <TableCell>{l.quantity}</TableCell>
+              {['basic', 'gst', 'tcs', 'tds', 'other', 'rounding', 'total'].map(
+                (k) => (
+                  <TableCell key={k}>{money(l[k] || 0, currency)}</TableCell>
+                ),
+              )}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <div className="op-total">
+        <span>Document total</span>
+        <strong>
+          {money(
+            lines.reduce((s, l) => s + (l.total || 0), 0),
+            currency,
+          )}
+        </strong>
+      </div>
+    </div>
+  );
+}
+function Settlement({ record, data }: { record: any; data: any[] }) {
+  const paid = data
+    .filter((r) => r.invoiceId === record.id && r.status === 'Posted')
+    .reduce((s, r) => s + r.amount, 0);
+  return (
+    <div className="op-summary">
+      <div>
+        <dt>Invoice value</dt>
+        <dd>{money(record.amount || 0, record.currency || 'INR')}</dd>
+      </div>
+      <div>
+        <dt>Settled</dt>
+        <dd>{money(paid, record.currency || 'INR')}</dd>
+      </div>
+      <div>
+        <dt>Outstanding</dt>
+        <dd>{money((record.amount || 0) - paid, record.currency || 'INR')}</dd>
+      </div>
+    </div>
+  );
+}
+function RecordLinks({
+  rows,
+  go,
+  onOpen,
+}: {
+  rows: any[];
+  go: (s: string) => void;
+  onOpen?: (r: any) => void;
+}) {
+  return (
+    <div className="op-links">
+      {rows.map((r) => (
+        <button key={r.id} onClick={() => (onOpen ? onOpen(r) : go(r.kind))}>
+          <FileText size={18} />
+          <span>
+            <strong>{label(r)}</strong>
+            <small>{opMap[r.kind]?.label}</small>
+          </span>
+          <Status value={r.status || 'Active'} />
+          <ChevronRight size={16} />
+        </button>
+      ))}
+    </div>
+  );
+}
+function Documents({
+  entity,
+  module,
+  documents,
+  data,
+  canWrite,
+  reload,
+}: {
+  entity: any;
+  module: OpModule;
+  documents: any[];
+  data: any[];
+  canWrite: boolean;
+  reload: () => void;
+}) {
+  const [template, setTemplate] = useState('');
+  const [category, setCategory] = useState(
+      module.documents[0] || 'Supporting document',
+    ),
+    [file, setFile] = useState<File | null>(null),
+    [tags, setTags] = useState(''),
+    [status, setStatus] = useState('Draft'),
+    [error, setError] = useState(''),
+    [busy, setBusy] = useState(false);
+  const upload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (file.size > 5 * 1024 * 1024)
+        throw new Error('Choose a file up to 5 MB.');
+      const content = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      await api(`operations/${entity.kind}/${entity.id}/document`, {
+        category,
+        filename: file.name,
+        mime: file.type,
+        content,
+        status,
+        tags,
+      });
+      setFile(null);
+      reload();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="op-documents">
+      {canWrite && (
+        <div className="op-upload">
+          <SelectField
+            field={{
+              key: 'templateId',
+              label: 'Document template',
+              source: 'master-document-templates',
+            }}
+            value={template}
+            onChange={setTemplate}
+            data={data}
+          />
+          <Button
+            disabled={!template || busy}
+            onClick={async () => {
+              setBusy(true);
+              setError('');
+              try {
+                await api(`operations/${entity.kind}/${entity.id}/generate`, {
+                  templateId: template,
+                });
+                reload();
+              } catch (e: any) {
+                setError(e.message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Generate Word document
+          </Button>
+        </div>
+      )}
+      <div className="op-checklist">
+        {module.documents.map((c) => (
+          <div key={c}>
+            <span>{c}</span>
+            <Status
+              value={
+                documents.some((d) => d.category === c) ? 'Uploaded' : 'Missing'
+              }
+            />
+          </div>
+        ))}
+      </div>
+      {canWrite && (
+        <form onSubmit={upload} className="op-upload">
+          <label className="field">
+            <span>Category</span>
+            <Input
+              list="document-categories"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              required
+            />
+            <datalist id="document-categories">
+              {module.documents.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </datalist>
+          </label>
+          <label className="field">
+            <span>File (up to 5 MB)</span>
+            <Input
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.docx,.xlsx"
+              required
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+            />
+          </label>
+          <label className="field">
+            <span>Status</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              {['Draft', 'Final', 'Sent'].map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Tags</span>
+            <Input value={tags} onChange={(e) => setTags(e.target.value)} />
+          </label>
+          <Button disabled={busy || !file}>
+            {busy ? 'Uploading…' : 'Upload document'}
+          </Button>
+        </form>
+      )}
+      {error && (
+        <p className="error-box" role="alert">
+          {error}
+        </p>
+      )}
+      {documents.length ? (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {[
+                'File',
+                'Category',
+                'Status',
+                'Version',
+                'Added by',
+                'Download',
+              ].map((h) => (
+                <TableHead key={h}>{h}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {documents.map((d) => (
+              <TableRow key={d.id}>
+                <TableCell>{d.filename}</TableCell>
+                <TableCell>{d.category}</TableCell>
+                <TableCell>
+                  <Status value={d.status} />
+                </TableCell>
+                <TableCell>{d.documentVersion}</TableCell>
+                <TableCell>{d.uploadedBy}</TableCell>
+                <TableCell>
+                  <a
+                    className="text-link"
+                    href={'/api/v1/operations/documents/' + d.id}
+                    download
+                  >
+                    <Download size={16} />
+                    Download
+                  </a>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      ) : (
+        <Blank
+          title="No documents uploaded"
+          detail="Add source documents, photos or supporting evidence. New uploads retain earlier versions."
+        />
+      )}
+    </div>
+  );
+}
+
+function ChildRows({
+  field,
+  value,
+  onChange,
+  readOnly = false,
+}: {
+  field: OpField;
+  value: any[];
+  onChange: (v: any[]) => void;
+  readOnly?: boolean;
+}) {
+  return (
+    <section className="op-child-rows">
+      <strong>{field.label}</strong>
+      {value.map((r, i) => (
+        <div className="op-child-row" key={i}>
+          {field.columns?.map((c) => (
+            <label className="field" key={c.key}>
+              <span>{c.label}</span>
+              {readOnly ? (
+                <span>{r[c.key] || '—'}</span>
+              ) : (
+                <Input
+                  type={c.type || 'text'}
+                  value={r[c.key] || ''}
+                  onChange={(e) =>
+                    onChange(
+                      value.map((x, n) =>
+                        n === i ? { ...x, [c.key]: e.target.value } : x,
+                      ),
+                    )
+                  }
+                />
+              )}
+            </label>
+          ))}
+          {!readOnly && (
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label={'Remove ' + field.label + ' row ' + (i + 1)}
+              onClick={() => onChange(value.filter((_, n) => n !== i))}
+            >
+              <Trash2 size={16} />
+            </Button>
+          )}
+        </div>
+      ))}
+      {!readOnly && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onChange([...value, {}])}
+        >
+          <Plus size={16} />
+          Add row
+        </Button>
+      )}
+    </section>
+  );
 }
