@@ -1,6 +1,8 @@
 'use client';
 import Masters from './masters';
 import Operations from './operations';
+import SalesDocuments from './sales-documents';
+import { salesKinds } from '@/lib/sales-engine';
 import OperationAdmin from './operation-admin';
 import OperationStock from './operation-stock';
 import OperationalOverview from './operational-overview';
@@ -911,6 +913,23 @@ function PageContent({
   )
     return <OperationStock />;
   const operationKind = operationRoutes[route] || route;
+  if (salesKinds.includes(operationKind))
+    return (
+      <SalesDocuments
+        key={operationKind}
+        kind={operationKind}
+        user={user}
+        fy={fy}
+        go={go}
+        refreshParent={refresh}
+        initialId={
+          typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('record') ||
+              undefined
+            : undefined
+        }
+      />
+    );
   if (opMap[operationKind])
     return (
       <Operations

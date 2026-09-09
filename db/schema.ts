@@ -114,3 +114,8 @@ export const postingGuards = sqliteTable(
   },
   (t) => [check('posting_version_match', sql`${t.expected}=${t.actual}`)],
 );
+
+export const documentSequences = sqliteTable('document_sequences', {
+  id: text('id').primaryKey(),
+  value: integer('value').notNull(),
+});

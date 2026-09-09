@@ -1,4 +1,5 @@
 export const schema = [
+  `CREATE TABLE IF NOT EXISTS document_sequences(id TEXT PRIMARY KEY,value INTEGER NOT NULL)`,
   // Applied after records exists; unique operational identities are defined below.
 
   `CREATE TABLE IF NOT EXISTS tenants (id TEXT PRIMARY KEY, name TEXT NOT NULL)`,

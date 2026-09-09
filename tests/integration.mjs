@@ -891,6 +891,247 @@ try {
   check('Tax amount overrides require a reason', () =>
     assert.equal(r.status, 400),
   );
+  const salesUser = (await call('sales/lookups')).data.users[0].id;
+  const salesTerms = await opCreate('master-payment-terms', {
+    name: 'Net 30',
+    days: '30',
+  });
+  const salesTax = await opCreate('tax-codes', {
+    name: 'GST 18',
+    gstRate: '18',
+  });
+  const salesProduct = await opCreate('products', {
+    name: 'Sales engine product',
+    sku: 'SALES-ENGINE',
+  });
+  const salesBase = {
+    ...base,
+    validUntil: '2026-12-31',
+    quotationType: 'Domestic',
+    salesPersonId: salesUser,
+    paymentTermsId: salesTerms,
+    taxTreatment: 'Unregistered',
+    placeOfSupply: 'Maharashtra',
+    gstSplit: 'CGST + SGST',
+    billingAddress: 'Test address',
+    shippingAddress: 'Test address',
+    internalNotes: 'PRIVATE-COST-NOTE',
+    internalCosting: { product: '42' },
+    freight: '10',
+    lines: [
+      {
+        productId: salesProduct,
+        description: 'Lathe',
+        quantity: '1',
+        rate: '100',
+        discountPercent: '10',
+        uom: 'PCS',
+        taxCodeId: salesTax,
+        gstRate: '99',
+      },
+    ],
+  };
+  r = await call('sales/quotations', salesBase);
+  check('Sales draft saves with automatic number', () =>
+    assert.equal(r.status, 201, JSON.stringify(r.data)),
+  );
+  const salesId = r.data.id;
+  let salesDetail = (await call('sales/quotations/' + salesId)).data;
+  check('Pricing uses tax master, discount and header charges', () => {
+    assert.equal(salesDetail.record.amount, 11620);
+    assert.equal(salesDetail.record.totals.cgst, 810);
+    assert.equal(salesDetail.internal.notes, 'PRIVATE-COST-NOTE');
+    assert.equal(salesDetail.record.internalNotes, undefined);
+  });
+  async function salesAction(id, action, body = {}, kind = 'quotations') {
+    const current = (await call(`sales/${kind}/${id}`)).data.record;
+    return call(`sales/${kind}/${id}/${action}`, {
+      version: current.version,
+      reason: 'Verified in integration test',
+      ...body,
+    });
+  }
+  const incomplete = (
+    await call('sales/quotations', { date: '2026-09-09', lines: [] })
+  ).data.id;
+  r = await salesAction(incomplete, 'status', { status: 'Under Review' });
+  check('Incomplete drafts cannot be submitted', () =>
+    assert.equal(r.status, 422),
+  );
+  for (const status of ['Under Review', 'Approved', 'Sent', 'Accepted']) {
+    r = await salesAction(salesId, 'status', { status });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+  }
+  check('Sales review approval and acceptance lifecycle', () =>
+    assert.equal(r.status, 200),
+  );
+  r = await salesAction(salesId, 'save', salesBase);
+  check('Issued sales versions cannot be edited', () =>
+    assert.equal(r.status, 400),
+  );
+  r = await call(`operations/quotations/${salesId}/save`, {
+    ...salesBase,
+    version: (await call('sales/quotations/' + salesId)).data.record.version,
+  });
+  check('Generic editor cannot bypass sales locking', () =>
+    assert.equal(r.status, 409),
+  );
+  r = await salesAction(salesId, 'document');
+  check('Customer document generation', () =>
+    assert.equal(r.status, 201, JSON.stringify(r.data)),
+  );
+  const testDB = await mf.getD1Database('DB');
+  const customerFile = JSON.parse(
+    (
+      await testDB
+        .prepare('SELECT data FROM records WHERE id=?')
+        .bind(r.data.id)
+        .first()
+    ).data,
+  );
+  const customerBytes = await (
+    await (await mf.getR2Bucket('FILES')).get(customerFile.objectKey)
+  ).text();
+  check('Customer document excludes internal costing', () => {
+    assert.ok(!customerBytes.includes('PRIVATE-COST-NOTE'));
+    assert.ok(customerBytes.includes('Lathe'));
+  });
+  r = await salesAction(salesId, 'revise');
+  const revisedId = r.data.id;
+  check('Revision creates a new immutable predecessor', () =>
+    assert.equal(r.status, 201, JSON.stringify(r.data)),
+  );
+  assert.equal(
+    (await call('sales/quotations/' + salesId)).data.record.status,
+    'Revised',
+  );
+  salesDetail = (await call('sales/quotations/' + revisedId)).data;
+  assert.equal(salesDetail.internal.notes, 'PRIVATE-COST-NOTE');
+  r = await salesAction(revisedId, 'save', {
+    ...salesBase,
+    internalNotes: 'NEW-PRIVATE-NOTE',
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(
+    (await call('sales/quotations/' + revisedId)).data.internal.notes,
+    'NEW-PRIVATE-NOTE',
+  );
+  for (const status of ['Under Review', 'Approved', 'Sent', 'Accepted'])
+    assert.equal(
+      (await salesAction(revisedId, 'status', { status })).status,
+      200,
+    );
+  r = await salesAction(revisedId, 'convert', { target: 'sales-orders' });
+  check('Accepted quotation converts to linked sales order', () =>
+    assert.equal(r.status, 201, JSON.stringify(r.data)),
+  );
+  const orderId = r.data.id;
+  const salesOrderDetail = (await call('sales/sales-orders/' + orderId)).data;
+  assert.equal(salesOrderDetail.record.sourceId, revisedId);
+  assert.equal(salesOrderDetail.record.status, 'Draft');
+  assert.ok(
+    !(await call('operations/data')).data.some((x) =>
+      ['sales-internal', 'sales-draft'].includes(x.kind),
+    ),
+  );
+  const viewerSales = (
+    await call('sales/quotations/' + revisedId, undefined, viewerCookie)
+  ).data;
+  check('Viewer cannot retrieve internal costing', () =>
+    assert.equal(viewerSales.internal, undefined),
+  );
+  assert.equal(
+    (await call('sales/draft/quotations-new', undefined, viewerCookie)).status,
+    403,
+  );
+  const concurrentSales = await Promise.all([
+    call('sales/quotations', salesBase),
+    call('sales/quotations', salesBase),
+  ]);
+  check('Concurrent drafts receive unique numbers', () => {
+    assert.ok(concurrentSales.every((x) => x.status === 201));
+    assert.notEqual(concurrentSales[0].data.id, concurrentSales[1].data.id);
+  });
+  const numbers = await Promise.all(
+    concurrentSales.map((x) => call('sales/quotations/' + x.data.id)),
+  );
+  assert.notEqual(
+    numbers[0].data.record.reference,
+    numbers[1].data.record.reference,
+  );
+  for (const status of ['Under Review', 'Approved', 'Sent', 'Accepted'])
+    assert.equal(
+      (await salesAction(orderId, 'status', { status }, 'sales-orders')).status,
+      200,
+    );
+  const convertedInvoice = await salesAction(
+    orderId,
+    'convert',
+    { target: 'invoices' },
+    'sales-orders',
+  );
+  assert.equal(
+    convertedInvoice.status,
+    201,
+    JSON.stringify(convertedInvoice.data),
+  );
+  const invoiceV2 = convertedInvoice.data.id;
+  r = await opStatus('invoices', invoiceV2, 'Posted');
+  check('Invoice posting cannot bypass approval', () =>
+    assert.equal(r.status, 409),
+  );
+  for (const status of ['Under Review', 'Approved', 'Sent', 'Accepted'])
+    assert.equal(
+      (await salesAction(invoiceV2, 'status', { status }, 'invoices')).status,
+      200,
+    );
+  const extraStock = await opCreate('purchase-invoices', {
+    ...base,
+    reference: 'SALES-ENGINE-STOCK',
+    lines: [
+      {
+        productId: salesProduct,
+        description: 'Test stock',
+        quantity: '2',
+        rate: '50',
+      },
+    ],
+    partnerId: opVendor,
+  });
+  assert.equal(
+    (await opStatus('purchase-invoices', extraStock, 'Posted')).status,
+    200,
+  );
+  r = await opStatus('invoices', invoiceV2, 'Posted');
+  check('New sales invoice posts balanced pricing and stock', () =>
+    assert.equal(r.status, 200, JSON.stringify(r.data)),
+  );
+  await call('sales/draft/quotations-new', { payload: salesBase });
+  const protectedSalesDraft = (await call('sales/draft/quotations-new')).data;
+  check('Draft protection survives a separate request', () =>
+    assert.equal(
+      protectedSalesDraft.payload.internalNotes,
+      'PRIVATE-COST-NOTE',
+    ),
+  );
+  await build({
+    entryPoints: ['lib/sales-engine.ts'],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    outfile: '.test-output/sales.mjs',
+  });
+  const { priceSales } = await import('../.test-output/sales.mjs');
+  check('Tax inclusive pricing and withholding bases', () => {
+    const p = priceSales({
+      taxInclusive: true,
+      withholdingBase: 'Tax inclusive',
+      lines: [{ quantity: '1', rate: '118', gstRate: '18', tcsRate: '1' }],
+    });
+    assert.equal(p.totals.taxable, 10000);
+    assert.equal(p.totals.gst, 1800);
+    assert.equal(p.totals.tcs, 118);
+  });
   r = await call('logout', {});
   r = await call('records');
   check('Logout revokes the session', () => assert.equal(r.status, 401));

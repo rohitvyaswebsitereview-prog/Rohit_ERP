@@ -35,7 +35,12 @@ const references: Record<string, string[]> = {
     .map((m) => m.key),
   'sales-invoice': ['invoices', 'domestic-invoices'],
   'purchase-payable': ['purchase-invoices', 'expenses', 'bills'],
-  'delivery-source': ['invoices', 'domestic-invoices', 'purchase-invoices'],
+  'delivery-source': [
+    'sales-orders',
+    'invoices',
+    'domestic-invoices',
+    'purchase-invoices',
+  ],
 };
 export async function operations(
   req: Request,
@@ -243,6 +248,32 @@ export async function operations(
         .map(redact),
     });
   }
+  if (
+    existing?.salesEngine === 2 &&
+    action === 'status' &&
+    b.status === 'Posted' &&
+    existing.status !== 'Accepted'
+  )
+    return json(
+      { error: 'Complete sales approval and acceptance before posting.' },
+      409,
+    );
+  if (
+    existing?.salesEngine === 2 &&
+    req.method === 'POST' &&
+    !['document', 'print', 'email-draft', 'generate'].includes(action || '') &&
+    !(
+      action === 'status' &&
+      ['invoices', 'domestic-invoices'].includes(kind) &&
+      ['Posted', 'Reversed'].includes(b.status)
+    )
+  )
+    return json(
+      {
+        error: 'Use the sales document lifecycle. Issued versions are locked.',
+      },
+      409,
+    );
   if (req.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
 
   if (action === 'print' || action === 'email-draft') {
@@ -456,6 +487,7 @@ export async function operations(
     const transitions = m.posting
       ? {
           Draft: ['Posted', 'Cancelled'],
+          Accepted: ['Posted'],
           Posted: ['Reversed'],
           Reversed: [],
           Cancelled: [],

@@ -397,5 +397,24 @@ for (const key of [
     .find((m) => m.key === 'finance')
     ?.items.push(['', key, opMap[key].label]);
 
-titles['administration-permissions']='Permissions';
-titles['administration-login-security']='Login & Security';
+titles['administration-permissions'] = 'Permissions';
+titles['administration-login-security'] = 'Login & Security';
+
+const salesNav = modules.find((m) => m.key === 'sales');
+if (salesNav) {
+  salesNav.items = salesNav.items.map((i) =>
+    i[1] === 'orders' ? ['', 'sales-orders', 'Sales Orders'] : i,
+  );
+  salesNav.items.push(
+    ['', 'sales-enquiries', 'Enquiries'],
+    ['', 'sales-projects', 'Projects'],
+  );
+}
+const settingsNav = modules.find((m) => m.key === 'settings');
+if (settingsNav)
+  settingsNav.items = [
+    ['', 'settings', 'Workspace Preferences'],
+    ['', 'tax-codes', 'Tax Codes'],
+    ['', 'price-lists', 'Price Lists'],
+    ['', 'standard-clauses', 'Standard Clauses'],
+  ];

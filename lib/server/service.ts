@@ -1,3 +1,4 @@
+import { sales } from './sales';
 import { opMap, permittedOperation } from '../operations';
 import { operations } from './operations';
 import { permittedMasters, masterItems } from '../masters';
@@ -342,12 +343,23 @@ export async function handle(req: Request) {
         return json({ error: 'JSON content type required.' }, 415);
       if (
         Number(req.headers.get('Content-Length') || 0) >
-        (path.startsWith('operations/') ? 7500000 : 100000)
+        (path.startsWith('operations/')
+          ? 7500000
+          : path.startsWith('sales/')
+            ? 200000
+            : 100000)
       )
         return json({ error: 'Request is too large.' }, 413);
     }
     const bodyText = req.method === 'GET' ? '' : await req.text();
-    if (bodyText.length > (path.startsWith('operations/') ? 7500000 : 100000))
+    if (
+      bodyText.length >
+      (path.startsWith('operations/')
+        ? 7500000
+        : path.startsWith('sales/')
+          ? 200000
+          : 100000)
+    )
       return json({ error: 'Request is too large.' }, 413);
     const b = bodyText ? JSON.parse(bodyText) : {};
     if (path === 'status' && req.method === 'GET')
@@ -447,6 +459,8 @@ export async function handle(req: Request) {
         { error: 'Your session has expired. Please sign in again.' },
         401,
       );
+    if (path.startsWith('sales/'))
+      return await sales(req, path, b, u, db(), (env as any).FILES);
     if (path.startsWith('operations/'))
       return await operations(req, path, b, u, db(), (env as any).FILES);
     if (path === 'me') return json({ user: u });

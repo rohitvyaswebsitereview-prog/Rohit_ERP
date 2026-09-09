@@ -1093,7 +1093,7 @@ function RecordLinks({
     </div>
   );
 }
-function Documents({
+export function Documents({
   entity,
   module,
   documents,

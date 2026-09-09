@@ -1030,6 +1030,94 @@ for (const [side, partnerKind] of [
     ],
   );
 }
+
+add(
+  'sales-orders',
+  'Sales Orders',
+  'Sales',
+  {
+    lines: true,
+    partner: 'customers',
+    roles: financial,
+    documents: ['Sales order', 'Customer PO'],
+    convert: [
+      'proformas',
+      'invoices',
+      'domestic-invoices',
+      'delivery-challans',
+    ],
+  },
+  [partner('customers')],
+);
+for (const [key, label, fields] of [
+  [
+    'tax-codes',
+    'Tax Codes',
+    [
+      f('name', 'Tax code name', 'text', true),
+      f('gstRate', 'GST percentage', 'number', true),
+      f('tcsRate', 'TCS percentage', 'number'),
+      f('tdsRate', 'TDS percentage', 'number'),
+      f('description', 'Treatment notes', 'textarea'),
+    ],
+  ],
+  [
+    'price-lists',
+    'Price Lists',
+    [
+      f('name', 'Price list name', 'text', true),
+      ref('currencyId', 'Currency', 'master-currency', true),
+      f('discountPercent', 'Default discount percentage', 'number'),
+      f('description', 'Description', 'textarea'),
+    ],
+  ],
+  [
+    'standard-clauses',
+    'Standard Clauses',
+    [
+      f('name', 'Clause name', 'text', true),
+      f('body', 'Clause text', 'textarea', true),
+    ],
+  ],
+  [
+    'sales-projects',
+    'Sales Projects',
+    [
+      f('name', 'Project name', 'text', true),
+      ref('customerId', 'Customer', 'customers'),
+      f('description', 'Description', 'textarea'),
+    ],
+  ],
+  [
+    'sales-enquiries',
+    'Sales Enquiries',
+    [
+      f('name', 'Enquiry reference', 'text', true),
+      ref('customerId', 'Customer', 'customers'),
+      f('description', 'Enquiry details', 'textarea'),
+    ],
+  ],
+] as [string, string, OpField[]][])
+  add(key, label, 'Sales configuration', {
+    master: true,
+    roles: financial,
+    fields,
+    transitions: masterStates,
+  });
+for (const key of ['customers', 'vendors'])
+  operationModules
+    .find((m) => m.key === key)!
+    .fields.push(
+      ref('currencyId', 'Default currency', 'master-currency'),
+      ref('paymentTermsId', 'Default payment terms', 'master-payment-terms'),
+      ref('priceListId', 'Default price list', 'price-lists'),
+      f('tradeName', 'Trade name'),
+      f('shippingAddress', 'Default shipping address', 'textarea'),
+      f('taxTreatment', 'Default tax treatment'),
+    );
+operationModules
+  .find((m) => m.key === 'products')!
+  .fields.push(ref('taxCodeId', 'Default sales tax code', 'tax-codes'));
 export const opMap = Object.fromEntries(
   operationModules.map((m) => [m.key, m]),
 );
