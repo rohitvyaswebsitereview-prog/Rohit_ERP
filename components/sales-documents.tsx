@@ -1,5 +1,5 @@
 'use client';
-import { WorkbookRecord } from './workbook-data';
+import { Record360 } from './record-360';
 import { useEffect, useRef, useState } from 'react';
 import {
   Plus,
@@ -220,6 +220,7 @@ export default function SalesDocuments({
     [selected, setSelected] = useState(initialId || ''),
     [detail, setDetail] = useState<any>(null),
     [editing, setEditing] = useState(false),
+    [manage, setManage] = useState(false),
     [draft, setDraft] = useState<any>({ lines: [] }),
     [tab, setTab] = useState('Overview'),
     [filter, setFilter] = useState('All'),
@@ -240,6 +241,11 @@ export default function SalesDocuments({
     [recovery, setRecovery] = useState<any>(null),
     [page, setPage] = useState(0),
     [docs, setDocs] = useState<any[]>([]);
+  useEffect(() => {
+    setManage(
+      new URLSearchParams(window.location.search).get('actions') === '1',
+    );
+  }, [selected]);
   const canWrite = ['Admin', 'Finance'].includes(user.role),
     title = salesLabels[kind] || 'Document';
   const draftKey = kind + '-' + (selected || 'new');
@@ -547,17 +553,19 @@ export default function SalesDocuments({
   } catch {}
   if (!canWrite && user.role !== 'Viewer')
     return <Blank title="Sales access unavailable" />;
-  if (record?.importLocked && !editing)
+  if (record && !editing && !manage)
     return (
-      <WorkbookRecord
-        record={record}
+      <Record360
+        id={record.id}
+        go={go}
         back={() => {
           setSelected('');
           setDetail(null);
         }}
-        go={go}
+        onManage={!record.importLocked ? () => setManage(true) : undefined}
       />
     );
+
   return (
     <div className="sales-workspace">
       {error && (

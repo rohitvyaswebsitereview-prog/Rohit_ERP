@@ -22,6 +22,13 @@
       "when": 1789012277152,
       "tag": "0002_goofy_preak",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789015673272,
+      "tag": "0003_sturdy_famine",
+      "breakpoints": true
     }
   ]
 }

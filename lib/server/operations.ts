@@ -1,3 +1,4 @@
+import { calculate } from '../transaction-rules';
 import { wordDocument } from './word-document';
 import {
   opMap,
@@ -1400,6 +1401,38 @@ export async function operations(
         throw new Error('Select a valid product for each line.');
     data.amount = data.lines.reduce((n: number, l: any) => n + l.total, 0);
   } else if (!m.master && data.amount) data.amount = moneyMinor(data.amount);
+  if (['remittances', 'forex', 'ebrc'].includes(kind)) {
+    const invoice = find(
+      data.invoiceId ||
+        (kind === 'forex' ? find(data.sourceId)?.sourceId : data.sourceId),
+    );
+    const receipt = find(data.receiptId);
+    if (
+      !invoice ||
+      invoice.kind !== 'invoices' ||
+      !receipt ||
+      receipt.kind !== 'receipts' ||
+      ![receipt.sourceId, receipt.invoiceId].includes(invoice.id)
+    )
+      throw new Error(
+        'The receipt and export invoice must belong to the same transaction.',
+      );
+    if (kind === 'forex') {
+      if (find(data.sourceId)?.receiptId !== receipt.id)
+        throw new Error('The remittance must use the selected receipt.');
+      data.calculation = {
+        rule: 'fx',
+        version: 1,
+        inputs: {
+          foreignAmount: data.foreignAmount,
+          invoiceRate: data.invoiceRate,
+          bankRate: data.bankRate,
+          bankChargesInr: data.bankChargesInr,
+        },
+        result: calculate('fx', data),
+      };
+    }
+  }
   if (kind === 'shipping-bills' && data.assessedDate && !data.leoDueDate) {
     const date = new Date(data.assessedDate + 'T00:00:00Z');
     date.setUTCDate(date.getUTCDate() + 15);

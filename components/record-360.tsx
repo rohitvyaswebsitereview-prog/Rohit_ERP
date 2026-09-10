@@ -1,0 +1,1139 @@
+'use client';
+import { useEffect, useState } from 'react';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { api, money, Loading, Status } from './erp-ui';
+import { WorkbookRecord } from './workbook-data';
+import { entityLabel, entityType } from '@/lib/relationships';
+const label = (s: string) =>
+  s
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .replace(/^./, (x) => x.toUpperCase());
+const tabs = [
+  'Overview',
+  'Transactions',
+  'Finance',
+  'Logistics',
+  'Procurement',
+  'Documents',
+  'Communication',
+  'Tasks',
+  'Timeline',
+  '360°',
+  'Audit',
+  'Source & Migration',
+];
+const reference = (r: any) => entityLabel(r);
+export function RelatedRecords({
+  records,
+  go,
+}: {
+  records: any[];
+  go: (r: string) => void;
+}) {
+  return records.length ? (
+    <div className="r360-records">
+      {records.map((r) => (
+        <button
+          key={r.id}
+          onClick={() => go('record360?record=' + encodeURIComponent(r.id))}
+        >
+          <span>{entityType(r.kind)}</span>
+          <strong>{reference(r)}</strong>
+          <small>
+            {r.party || r.serialNumber || r.date || 'Date not supplied'}
+          </small>
+          <span>
+            {r.status || 'Recorded'}
+            {r.amount !== undefined
+              ? ' · ' + money(r.amount, r.currency || 'INR')
+              : ''}{' '}
+            ↗
+          </span>
+        </button>
+      ))}
+    </div>
+  ) : (
+    <p className="muted">No confirmed linked records.</p>
+  );
+}
+export function Record360({
+  id,
+  go,
+  back,
+  onManage,
+}: {
+  id: string;
+  go: (r: string) => void;
+  back?: () => void;
+  onManage?: () => void;
+}) {
+  const [data, setData] = useState<any>(null),
+    [error, setError] = useState(''),
+    [tab, setTab] = useState('Overview'),
+    [revision, setRevision] = useState(0),
+    [busy, setBusy] = useState(false),
+    [task, setTask] = useState<any>({}),
+    [link, setLink] = useState<any>({ type: 'REFERENCES' }),
+    [query, setQuery] = useState(''),
+    [matches, setMatches] = useState<any[]>([]),
+    [rule, setRule] = useState('fx'),
+    [inputs, setInputs] = useState<any>({}),
+    [result, setResult] = useState<any>(null),
+    [file, setFile] = useState<File | null>(null),
+    [category, setCategory] = useState('Supporting document');
+  useEffect(() => {
+    let live = true;
+    setError('');
+    setData(null);
+    api('relationships/' + encodeURIComponent(id))
+      .then((d) => live && setData(d))
+      .catch((e) => live && setError(e.message));
+    return () => {
+      live = false;
+    };
+  }, [id, revision]);
+  useEffect(() => {
+    setTab('Overview');
+    setTask({});
+    setLink({ type: 'REFERENCES' });
+    setInputs({});
+    setResult(null);
+  }, [id]);
+  useEffect(() => {
+    let live = true;
+    const timer = setTimeout(() => {
+      api('relationships/search?q=' + encodeURIComponent(query))
+        .then((r) => live && setMatches(r))
+        .catch((e) => live && setError(e.message));
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
+  async function mutate(path: string, body: any) {
+    setBusy(true);
+    setError('');
+    try {
+      const r = await api('relationships/' + path, body);
+      setRevision((n) => n + 1);
+      return r;
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!data)
+    return (
+      <>
+        {error ? (
+          <p className="error-box">
+            {error}
+            <Button onClick={() => setRevision((n) => n + 1)}>Retry</Button>
+          </p>
+        ) : (
+          <Loading />
+        )}
+      </>
+    );
+  const r = data.record,
+    nodes = data.records.filter((x: any) => x.id !== id),
+    get = (rid: string) => data.records.find((x: any) => x.id === rid),
+    pending = data.pending.filter((p: any) => !p.complete),
+    definition = data.rules.find((d: any) => d.id === rule);
+  const subset = (kinds: string[]) =>
+    nodes.filter((r: any) => kinds.includes(r.kind));
+  const finance = subset([
+    'invoices',
+    'domestic-invoices',
+    'purchase-invoices',
+    'expenses',
+    'receipts',
+    'payments',
+    'remittances',
+    'forex',
+    'ebrc',
+    'incentives',
+    'customer-advances',
+    'supplier-advances',
+    'journal',
+  ]);
+  const financialTotals = Object.entries(
+    finance.reduce((tot: any, n: any) => {
+      if (n.amount !== undefined) {
+        const k = entityType(n.kind) + ' · ' + (n.currency || 'INR');
+        tot[k] = (tot[k] || 0) + Number(n.amount);
+      }
+      return tot;
+    }, {}),
+  );
+  const business = Object.entries(r).filter(
+    ([k, v]) =>
+      ![
+        'id',
+        'kind',
+        'created',
+        'version',
+        'operation',
+        'importLocked',
+        'sourceAmountExact',
+        'sourceRow',
+        'sourceId',
+        'partnerId',
+        'relatedIds',
+        'lines',
+        'totals',
+        'sourceFacts',
+        'sourceWorkbook',
+      ].includes(k) &&
+      !k.endsWith('Id') &&
+      v !== '' &&
+      v !== null &&
+      v !== undefined &&
+      typeof v !== 'object',
+  );
+  const next = pending[0];
+  return (
+    <div className="r360">
+      <header className="widget r360-header">
+        <div className="r360-top">
+          <Button variant="outline" onClick={back || (() => go(r.kind))}>
+            ← Back
+          </Button>
+          <span>{entityType(r.kind)} · 360°</span>
+          <div className="inline-actions">
+            {onManage && (
+              <Button variant="outline" onClick={onManage}>
+                Record actions
+              </Button>
+            )}
+            {!onManage && !r.importLocked && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  go(
+                    r.kind + '?record=' + encodeURIComponent(id) + '&actions=1',
+                  )
+                }
+              >
+                Record actions
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => window.print()}>
+              Print view
+            </Button>
+          </div>
+        </div>
+        <h2>{reference(r)}</h2>
+        <p>{r.party || r.name || r.serialNumber || ''}</p>
+        <div className="r360-top">
+          <Status value={r.status || 'Recorded'} />
+          <strong>
+            {r.amount !== undefined ? money(r.amount, r.currency || 'INR') : ''}
+          </strong>
+          <span>{r.date || 'Date not supplied'}</span>
+          <span>Version {r.version || 1}</span>
+        </div>
+      </header>
+      {error && (
+        <p role="alert" className="error-box">
+          {error}
+        </p>
+      )}
+      {data.pending.length > 0 && (
+        <div className="r360-lifecycle" aria-label="Lifecycle evidence">
+          {data.pending.map((p: any) => (
+            <button
+              key={p.key}
+              onClick={() => {
+                setTab('Tasks');
+                setTask({ name: p.action, owner: p.owner });
+              }}
+              className={p.complete ? 'complete' : 'pending'}
+            >
+              {p.complete ? '✓' : '○'} {p.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <nav className="r360-tabs" aria-label="Record sections">
+        {tabs
+          .filter((t) => t !== 'Source & Migration' || data.sourceAvailable)
+          .map((t) => (
+            <button
+              key={t}
+              aria-current={tab === t ? 'page' : undefined}
+              onClick={() => setTab(t)}
+            >
+              {t}
+            </button>
+          ))}
+      </nav>
+      {tab === 'Overview' && (
+        <div className="r360-columns">
+          <section className="widget">
+            <h3>Business information</h3>
+            <dl className="r360-fields">
+              {business.map(([k, v]) => (
+                <div key={k}>
+                  <dt>{label(k)}</dt>
+                  <dd>
+                    {k === 'amount'
+                      ? money(Number(v), r.currency || 'INR')
+                      : String(v)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {r.lines?.length > 0 && (
+              <>
+                <h3>Equipment and lines</h3>
+                <div className="r360-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Line</th>
+                        <th>Product / description</th>
+                        <th>Serial</th>
+                        <th>Quantity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {r.lines.map((l: any, i: number) => (
+                        <tr key={i}>
+                          <td>{i + 1}</td>
+                          <td>
+                            {l.description ||
+                              l.productName ||
+                              get(l.productId)?.name ||
+                              '—'}
+                          </td>
+                          <td>{l.serialNumber || l.serialNumbers || '—'}</td>
+                          <td>{l.quantity ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            <h3>Related transactions</h3>
+            <RelatedRecords records={nodes.slice(0, 12)} go={go} />
+            {nodes.length > 12 && (
+              <Button onClick={() => setTab('Transactions')}>
+                View all {nodes.length} linked records
+              </Button>
+            )}
+          </section>
+          <aside className="widget">
+            <h3>Financial position</h3>
+            {data.financial.summary.map((s: any) => (
+              <p key={s.label}>
+                <strong>
+                  {s.label}: {money(s.balance, s.currency)}
+                </strong>
+                <br />
+                FY sales / purchases: {money(s.ytd, s.currency)}
+              </p>
+            ))}
+            <h3>Next action</h3>
+            {next ? (
+              <>
+                <strong>{next.action}</strong>
+                <p>Suggested team: {next.owner}</p>
+                <p>
+                  No due date is assumed. Assign an owner and deadline in Tasks.
+                </p>
+                <Button
+                  onClick={() => {
+                    setTab('Tasks');
+                    setTask({ name: next.action, owner: next.owner });
+                  }}
+                >
+                  Assign task
+                </Button>
+              </>
+            ) : (
+              <p>
+                {data.pending.length
+                  ? 'Recorded evidence covers the configured checks.'
+                  : 'Review this record and its related transactions.'}
+              </p>
+            )}
+            <h3>eBRC readiness</h3>
+            <p>
+              {data.pending.length
+                ? data.pending.filter(
+                    (p: any) =>
+                      !p.complete &&
+                      !['eBRC', 'DBK', 'RoDTEP', 'IGST refund'].includes(p.key),
+                  ).length
+                  ? 'Not ready — evidence is missing'
+                  : 'Core evidence recorded — review required documents and bank requirements'
+                : 'No confirmed export invoice linked.'}
+            </p>
+            <p className="muted">
+              A linked record is evidence of recording, not bank or government
+              certification. Receipt coverage and required documents must be
+              reconciled before closure.
+            </p>
+            <h3>Relationship confidence</h3>
+            <p>{data.edges.length} confirmed / reviewed connections</p>
+            <p>{data.candidates.length} potential matches to review</p>
+            <Button variant="outline" onClick={() => setTab('360°')}>
+              Explore connections
+            </Button>
+          </aside>
+        </div>
+      )}
+      {tab === 'Transactions' && (
+        <section className="widget">
+          <h3>All confirmed related transactions</h3>
+          <RelatedRecords records={nodes} go={go} />
+        </section>
+      )}
+      {tab === 'Procurement' && (
+        <section className="widget">
+          <h3>Underlying procurement and equipment</h3>
+          <RelatedRecords
+            records={subset([
+              'vendors',
+              'purchase-orders',
+              'purchase-invoices',
+              'purchase-debit-notes',
+              'machines',
+              'products',
+              'warehouses',
+            ])}
+            go={go}
+          />
+          <p className="muted">
+            Procurement supports the export through equipment and cost
+            allocation. It does not itself establish bank realisation.
+          </p>
+        </section>
+      )}
+      {tab === 'Logistics' && (
+        <section className="widget">
+          <h3>Export and shipment documents</h3>
+          <RelatedRecords
+            records={subset([
+              'shipping-bills',
+              'bills-of-lading',
+              'shipments',
+              'export-shipments',
+              'packing-lists',
+              'export-documents',
+              'delivery-challans',
+              'eway-bills',
+            ])}
+            go={go}
+          />
+        </section>
+      )}
+      {tab === 'Finance' && (
+        <section className="widget">
+          <h3>Financial reconciliation</h3>
+          <p>{data.financial.note}</p>
+          <div className="r360-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice</th>
+                  <th>Type</th>
+                  <th>Value</th>
+                  <th>Settled</th>
+                  <th>Balance</th>
+                  <th>Accounting status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.financial.lines.map((l: any) => (
+                  <tr key={l.id}>
+                    <td>
+                      <button onClick={() => go('record360?record=' + l.id)}>
+                        {l.reference}
+                      </button>
+                    </td>
+                    <td>{l.type}</td>
+                    <td>{money(l.amount, l.currency)}</td>
+                    <td>{money(l.settled, l.currency)}</td>
+                    <td>{money(l.balance, l.currency)}</td>
+                    <td>{l.posting}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Totals below group recorded amounts by type and currency. Historical
+            imports are separate from posted ledger balances.
+          </p>
+          <div className="r360-kpis">
+            {financialTotals.map(([k, v]) => (
+              <div key={k}>
+                <span>{k}</span>
+                <strong>{money(Number(v), k.split(' · ').at(-1))}</strong>
+              </div>
+            ))}
+          </div>
+          <RelatedRecords records={finance} go={go} />
+          <h3>Calculation rules</h3>
+          <select
+            value={rule}
+            onChange={(e) => {
+              setRule(e.target.value);
+              setInputs({});
+              setResult(null);
+            }}
+          >
+            {data.rules.map((d: any) => (
+              <option value={d.id} key={d.id}>
+                {d.label} · v{d.version}
+              </option>
+            ))}
+          </select>
+          <p>{definition.description}</p>
+          {data.canManage && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const answer = await mutate('calculate', {
+                  recordId: id,
+                  rule,
+                  inputs,
+                });
+                if (answer) setResult(answer.result);
+              }}
+            >
+              <div className="r360-fields">
+                {definition.inputs.map((k: string) => (
+                  <label key={k}>
+                    {label(k)}
+                    {k === 'interstate' ? (
+                      <select
+                        value={String(inputs[k] ?? '')}
+                        onChange={(e) =>
+                          setInputs({
+                            ...inputs,
+                            [k]: e.target.value === 'true',
+                          })
+                        }
+                        required
+                      >
+                        <option value="">Choose</option>
+                        <option value="true">Interstate</option>
+                        <option value="false">Intrastate</option>
+                      </select>
+                    ) : (
+                      <Input
+                        type="number"
+                        step="any"
+                        required
+                        value={inputs[k] ?? ''}
+                        onChange={(e) =>
+                          setInputs({ ...inputs, [k]: e.target.value })
+                        }
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+              <Button disabled={busy}>Calculate and save audit</Button>
+            </form>
+          )}
+          {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+          <h3>Saved calculations</h3>
+          {data.calculations.map((c: any) => (
+            <details key={c.id}>
+              <summary>
+                {c.rule_id} v{c.rule_version} · {c.created}
+              </summary>
+              <pre>{JSON.stringify(JSON.parse(c.data), null, 2)}</pre>
+            </details>
+          ))}
+        </section>
+      )}
+      {tab === 'Documents' && (
+        <section className="widget">
+          <h3>Document control</h3>
+          <div className="r360-records">
+            {[
+              'invoices',
+              'packing-lists',
+              'shipping-bills',
+              'bills-of-lading',
+              'export-documents',
+              'receipts',
+              'ebrc',
+            ].map((kind) => {
+              const docs = data.records.filter((n: any) => n.kind === kind);
+              return (
+                <div key={kind}>
+                  <strong>{entityType(kind)}</strong>
+                  <span>{docs.length ? 'Recorded' : 'No linked record'}</span>
+                  <RelatedRecords records={docs} go={go} />
+                </div>
+              );
+            })}
+          </div>
+          <h3>Attachments</h3>
+          <RelatedRecords records={subset(['documents'])} go={go} />
+          {subset(['op-document']).map((d: any) => (
+            <p key={d.id}>
+              <a href={'/api/v1/operations/documents/' + d.id}>
+                {d.filename || d.reference} ↓
+              </a>{' '}
+              · {d.category} · Version {d.documentVersion || d.version}
+            </p>
+          ))}
+          {data.canManage && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!file) return;
+                setBusy(true);
+                setError('');
+                try {
+                  if (file.size > 5 * 1024 * 1024)
+                    throw new Error('Maximum file size is 5 MB.');
+                  const content = await new Promise<string>(
+                    (resolve, reject) => {
+                      const reader = new FileReader();
+                      reader.onload = () =>
+                        resolve(String(reader.result).split(',')[1]);
+                      reader.onerror = () =>
+                        reject(new Error('Unable to read file.'));
+                      reader.readAsDataURL(file);
+                    },
+                  );
+                  await api('operations/' + r.kind + '/' + r.id + '/document', {
+                    category,
+                    filename: file.name,
+                    mime: file.type,
+                    content,
+                    status: 'Final',
+                    version: r.version,
+                  });
+                  setFile(null);
+                  setRevision((n) => n + 1);
+                } catch (e: any) {
+                  setError(e.message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <h3>Add supporting document</h3>
+              <label>
+                Document category
+                <Input
+                  required
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                />
+              </label>
+              <Input
+                type="file"
+                required
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.docx,.xlsx"
+              />
+              <Button disabled={busy || !file}>Upload document</Button>
+            </form>
+          )}
+          <p>
+            Certificate of origin, insurance and inspection requirements must be
+            checked for the shipment.
+          </p>
+        </section>
+      )}
+      {tab === 'Communication' && (
+        <section className="widget">
+          <h3>Recorded communication</h3>
+          {subset(['sales-communication']).map((c: any) => (
+            <article key={c.id}>
+              <strong>
+                {c.date || c.created} · {c.channel || c.type || 'Note'}
+              </strong>
+              <p>{c.notes || c.note || c.reason || c.message || c.reference}</p>
+            </article>
+          ))}
+          {!subset(['sales-communication']).length && (
+            <p>No linked communication recorded.</p>
+          )}
+          <p>
+            Use the existing sales record actions to record communication.
+            Messages are not sent automatically.
+          </p>
+        </section>
+      )}
+      {tab === 'Tasks' && (
+        <section className="widget">
+          <h3>Pending work</h3>
+          {pending.map((p: any) => (
+            <p key={p.key}>
+              ○ {p.action} · {p.owner}
+            </p>
+          ))}
+          <RelatedRecords
+            records={subset(['tasks', 'checklists', 'approvals'])}
+            go={go}
+          />
+          {data.canManage && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await mutate('task', { ...task, recordId: id });
+              }}
+            >
+              <h3>Assign next action</h3>
+              <div className="r360-fields">
+                <label>
+                  Task
+                  <Input
+                    required
+                    value={task.name || ''}
+                    onChange={(e) => setTask({ ...task, name: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Owner
+                  <Input
+                    required
+                    value={task.owner || ''}
+                    onChange={(e) =>
+                      setTask({ ...task, owner: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Due date
+                  <Input
+                    type="date"
+                    required
+                    value={task.dueDate || ''}
+                    onChange={(e) =>
+                      setTask({ ...task, dueDate: e.target.value })
+                    }
+                  />
+                </label>
+              </div>
+              <Button disabled={busy}>Create linked task</Button>
+            </form>
+          )}
+        </section>
+      )}
+      {tab === 'Timeline' && (
+        <section className="widget">
+          <h3>Business timeline</h3>
+          <ol className="r360-timeline">
+            {data.timeline.map((e: any, i: number) => (
+              <li key={i}>
+                <time>{e.date}</time>
+                <button onClick={() => go('record360?record=' + e.recordId)}>
+                  <strong>{e.label}</strong>
+                  <span>
+                    {e.reference} · {e.evidence}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          {!data.timeline.length && <p>No dated events supplied.</p>}
+        </section>
+      )}
+      {tab === '360°' && (
+        <section className="widget">
+          <h3>Transaction graph</h3>
+          <p>
+            Each connection shows its direction, relationship and supporting
+            evidence.
+          </p>
+          <div className="r360-edges">
+            {data.edges.map((e: any) => (
+              <div key={e.id}>
+                <button onClick={() => go('record360?record=' + e.source_id)}>
+                  {reference(get(e.source_id) || { id: e.source_id })}
+                </button>
+                <span>
+                  → {e.relationship_type.replaceAll('_', ' ')} →
+                  <small>
+                    {e.evidence}
+                    {e.source_line ? ' · Line ' + e.source_line : ''} ·{' '}
+                    {e.status}
+                  </small>
+                </span>
+                <button onClick={() => go('record360?record=' + e.target_id)}>
+                  {reference(get(e.target_id) || { id: e.target_id })}
+                </button>
+              </div>
+            ))}
+          </div>
+          <h3>Potential matches — review required</h3>
+          {data.candidates.map((e: any) => (
+            <div className="r360-review" key={e.id}>
+              <p>
+                {e.source} → {e.target}
+              </p>
+              <small>
+                {e.evidence} · Confidence {Math.round(e.confidence * 100)}%
+              </small>
+              {data.canManage && (
+                <form
+                  onSubmit={async (event) => {
+                    event.preventDefault();
+                    const form = new FormData(event.currentTarget);
+                    await mutate('review/' + encodeURIComponent(e.id), {
+                      status: form.get('status'),
+                      reason: form.get('reason'),
+                      version: e.version,
+                    });
+                  }}
+                >
+                  <Input
+                    name="reason"
+                    placeholder="Evidence and review reason"
+                    required
+                  />
+                  <select name="status">
+                    <option>Confirmed</option>
+                    <option>Rejected</option>
+                  </select>
+                  <Button disabled={busy}>Save review</Button>
+                </form>
+              )}
+            </div>
+          ))}
+          {data.canManage && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await mutate('link', { ...link, sourceId: id });
+              }}
+            >
+              <h3>Link a record</h3>
+              <Input
+                placeholder="Search name, invoice, serial or bank reference"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <select
+                required
+                value={link.targetId || ''}
+                onChange={(e) => setLink({ ...link, targetId: e.target.value })}
+              >
+                <option value="">Choose a record</option>
+                {matches
+                  .filter((m) => m.id !== id)
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {entityType(m.kind)} · {reference(m)}
+                    </option>
+                  ))}
+              </select>
+              <select
+                value={link.type}
+                onChange={(e) => setLink({ ...link, type: e.target.value })}
+              >
+                {data.types.map((t: string) => (
+                  <option key={t}>{t}</option>
+                ))}
+              </select>
+              <div className="r360-fields">
+                <label>
+                  Source line (optional)
+                  <Input
+                    value={link.sourceLine || ''}
+                    onChange={(e) =>
+                      setLink({ ...link, sourceLine: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Target line (optional)
+                  <Input
+                    value={link.targetLine || ''}
+                    onChange={(e) =>
+                      setLink({ ...link, targetLine: e.target.value })
+                    }
+                  />
+                </label>
+              </div>
+              <Input
+                required
+                placeholder="Supporting evidence / reason"
+                value={link.reason || ''}
+                onChange={(e) => setLink({ ...link, reason: e.target.value })}
+              />
+              <Button disabled={busy}>Save relationship</Button>
+            </form>
+          )}
+        </section>
+      )}
+      {tab === 'Audit' && (
+        <section className="widget">
+          <h3>Audit and versions</h3>
+          {data.audit.map((a: any) => (
+            <details key={a.id}>
+              <summary>
+                {a.created} · {a.action} · {a.actor || 'System'}
+              </summary>
+              <pre>{a.detail}</pre>
+            </details>
+          ))}
+          {data.versions.map((v: any) => (
+            <details key={v.id}>
+              <summary>
+                Preserved version {v.version} · {v.created}
+              </summary>
+              <pre>{JSON.stringify(JSON.parse(v.data), null, 2)}</pre>
+            </details>
+          ))}
+          {!data.audit.length && !data.versions.length && (
+            <p>No accessible audit events or prior versions.</p>
+          )}
+        </section>
+      )}
+      {tab === 'Source & Migration' && (
+        <WorkbookRecord record={r} back={() => setTab('Overview')} go={go} />
+      )}
+    </div>
+  );
+}
+export function ControlTower({
+  go,
+  fy,
+  compact = false,
+}: {
+  go: (r: string) => void;
+  fy: string;
+  compact?: boolean;
+}) {
+  const [data, setData] = useState<any>(null),
+    [error, setError] = useState(''),
+    [category, setCategory] = useState('All'),
+    [q, setQ] = useState(''),
+    [page, setPage] = useState(0);
+  useEffect(() => {
+    let live = true;
+    api('relationships/control')
+      .then((d) => live && setData(d))
+      .catch((e) => live && setError(e.message));
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (error) return <p className="error-box">{error}</p>;
+  if (!data) return <Loading />;
+  const scope = data.exceptions.filter((e: any) => e.fy === fy),
+    groups = [...new Set<string>(scope.map((e: any) => e.category))],
+    rows = scope.filter(
+      (e: any) =>
+        (category === 'All' || e.category === category) &&
+        JSON.stringify(e).toLowerCase().includes(q.toLowerCase()),
+    );
+  return (
+    <section className="widget r360-control">
+      <div className="r360-top">
+        <h2>
+          {compact
+            ? "Today's control tower"
+            : 'Exception & Reconciliation Centre'}
+        </h2>
+        {compact && (
+          <Button variant="outline" onClick={() => go('control-tower')}>
+            View all actions
+          </Button>
+        )}
+      </div>
+      <div className="r360-kpis">
+        {groups.slice(0, compact ? 4 : groups.length).map((g) => (
+          <button
+            key={g}
+            onClick={() => {
+              setCategory(g);
+              setPage(0);
+            }}
+          >
+            <span>{g}</span>
+            <strong>{scope.filter((e: any) => e.category === g).length}</strong>
+          </button>
+        ))}
+      </div>
+      <p>
+        Missing evidence indicates a review action; it does not prove that the
+        business step did not happen.
+      </p>
+      {!compact && (
+        <>
+          <div className="r360-top">
+            <select
+              value={category}
+              onChange={(e) => {
+                setCategory(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option>All</option>
+              {groups.map((g) => (
+                <option key={g}>{g}</option>
+              ))}
+            </select>
+            <Input
+              placeholder="Search actions"
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(0);
+              }}
+            />
+            <Button variant="outline" onClick={() => go('workbook-data')}>
+              Migration & source reconciliation
+            </Button>
+            <Button variant="outline" onClick={() => go('data-dictionary')}>
+              Data dictionary & rules
+            </Button>
+          </div>
+          <p>
+            Relationships: {data.relationships.confirmed} confirmed ·{' '}
+            {data.relationships.derived} awaiting review ·{' '}
+            {data.relationships.rejected} rejected
+          </p>
+        </>
+      )}
+      <div className="r360-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Record</th>
+              <th>Missing / pending</th>
+              <th>Next action</th>
+              <th>Suggested team</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows
+              .slice(compact ? 0 : page * 25, compact ? 5 : page * 25 + 25)
+              .map((e: any) => (
+                <tr key={e.id}>
+                  <td>
+                    <button
+                      onClick={() => go('record360?record=' + e.recordId)}
+                    >
+                      {e.reference} ↗
+                    </button>
+                  </td>
+                  <td>{e.category}</td>
+                  <td>{e.action}</td>
+                  <td>{e.owner}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+      {!rows.length && <p>No matching exceptions in FY {fy}.</p>}
+      {!compact && (
+        <div className="r360-top">
+          <Button disabled={!page} onClick={() => setPage(page - 1)}>
+            Previous
+          </Button>
+          <span>
+            {rows.length} actions · page {page + 1}
+          </span>
+          <Button
+            disabled={(page + 1) * 25 >= rows.length}
+            onClick={() => setPage(page + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+export function DataDictionary() {
+  const [data, setData] = useState<any>(null),
+    [q, setQ] = useState(''),
+    [error, setError] = useState('');
+  useEffect(() => {
+    api('relationships/dictionary')
+      .then(setData)
+      .catch((e) => setError(e.message));
+  }, []);
+  return (
+    <section className="widget r360">
+      <h2>Data dictionary, workflow & calculation rules</h2>
+      <Input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Find an entity or field"
+      />
+      {error && <p className="error-box">{error}</p>}
+      {data?.entities
+        .filter((e: any) =>
+          JSON.stringify(e).toLowerCase().includes(q.toLowerCase()),
+        )
+        .map((e: any) => (
+          <details key={e.entity}>
+            <summary>
+              {e.label} · {e.fields.length} fields
+            </summary>
+            <div className="r360-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    {[
+                      'Field',
+                      'Type',
+                      'Required',
+                      'Source / relationship',
+                      'Editable',
+                      'Validation',
+                    ].map((t) => (
+                      <th key={t}>{t}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {e.fields.map((f: any) => (
+                    <tr key={f.key}>
+                      <td>
+                        {f.label} ({f.key})
+                      </td>
+                      <td>{f.type || 'text'}</td>
+                      <td>{f.required ? 'Yes' : 'No'}</td>
+                      <td>{f.source}</td>
+                      <td>{f.editable}</td>
+                      <td>{f.validation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <h4>Allowed workflow transitions</h4>
+            {Object.entries(e.transitions).map(([s, v]: any) => (
+              <p key={s}>
+                {s} → {v.join(', ') || 'Terminal state'}
+              </p>
+            ))}
+            <p>
+              Documents: {e.documents.join(', ') || 'Supporting attachments'}
+            </p>
+          </details>
+        ))}
+      {data?.rules.map((r: any) => (
+        <details key={r.id}>
+          <summary>
+            {r.label} v{r.version}
+          </summary>
+          <p>{r.description}</p>
+          <p>Inputs: {r.inputs.join(', ')}</p>
+        </details>
+      ))}
+    </section>
+  );
+}

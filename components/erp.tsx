@@ -1,4 +1,5 @@
 'use client';
+import { Record360, ControlTower, DataDictionary } from './record-360';
 import Masters from './masters';
 import Operations from './operations';
 import WorkbookData, { WorkbookOverview } from './workbook-data';
@@ -379,6 +380,7 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
     (r: string, f = '', range: { from?: string; to?: string } = {}) => {
       const [base, queryString = ''] = r.split('?');
       setRoute(base);
+      setRevision((n) => n + 1);
       setFilter(f);
       const extra = new URLSearchParams(queryString);
       window.history.pushState(
@@ -456,12 +458,7 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
     let active = true;
     const timeout = setTimeout(() => {
       setSearchError('');
-      api(
-        'search?fy=' +
-          encodeURIComponent(fy) +
-          '&q=' +
-          encodeURIComponent(search),
-      )
+      api('relationships/search?q=' + encodeURIComponent(search))
         .then((r) => active && setResults(r))
         .catch((e) => active && setSearchError(e.message));
     }, 200);
@@ -534,7 +531,7 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
           </div>
           <button className="global-search" onClick={() => setSearchOpen(true)}>
             <Search size={17} />
-            <span>Search invoices, customers, products…</span>
+            <span>Search anything…</span>
             <kbd>Ctrl K</kbd>
           </button>
           <div className="header-actions">
@@ -696,7 +693,10 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
             validRange ? (
               <>
                 {['Admin', 'Finance'].includes(user.role) && (
-                  <WorkbookOverview go={go} fy={fy} />
+                  <>
+                    <ControlTower go={go} fy={fy} compact />
+                    <WorkbookOverview go={go} fy={fy} />
+                  </>
                 )}
                 <OperationalOverview revision={revision} go={go} />
                 <Dashboard
@@ -757,13 +757,13 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
         <DialogContent className="search-dialog">
           <DialogTitle>Search your ERP</DialogTitle>
           <DialogDescription>
-            Records across your workspace · FY {fy}
+            Records and references across all financial years
           </DialogDescription>
           <Command shouldFilter={false}>
             <CommandInput
               value={search}
               onValueChange={setSearch}
-              placeholder="Search invoices, customers, products, documents…"
+              placeholder="Search anything: serial, invoice, bank reference, shipment…"
             />
             <CommandList>
               {searchError ? (
@@ -784,14 +784,20 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
                           key={r.id}
                           value={r.id}
                           onSelect={() => {
-                            go(r.kind, r.reference || r.name);
+                            go('record360?record=' + encodeURIComponent(r.id));
                             setSearchOpen(false);
                           }}
                         >
                           <Search size={15} />
                           <span>
                             {r.reference || r.name}
-                            <small>{r.destination || r.sku || ''}</small>
+                            <small>
+                              {r.party ||
+                                r.destination ||
+                                r.sku ||
+                                r.date ||
+                                ''}
+                            </small>
                           </span>
                           <ArrowUpRight size={15} />
                         </CommandItem>
@@ -900,6 +906,20 @@ function PageContent({
         {error}
       </div>
     );
+  if (route === 'record360')
+    return (
+      <Record360
+        key={typeof window !== 'undefined' ? window.location.search : ''}
+        id={
+          typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('record') || ''
+            : ''
+        }
+        go={go}
+      />
+    );
+  if (route === 'control-tower') return <ControlTower go={go} fy={fy} />;
+  if (route === 'data-dictionary') return <DataDictionary />;
   if (route === 'workbook-data') return <WorkbookData fy={fy} go={go} />;
   if (route === 'masters') return <Masters go={go} />;
   if (

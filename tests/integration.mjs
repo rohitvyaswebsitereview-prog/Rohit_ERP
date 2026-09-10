@@ -1402,6 +1402,240 @@ try {
   check('ERP record resolves to original workbook cells', () =>
     assert.equal(r.data.rows[0].cells[0].address, 'B2'),
   );
+
+  // Relationship integration uses synthetic records only.
+  async function graphSeed(id, kind, data, tenant = wbTenant) {
+    await testDB
+      .prepare(
+        'INSERT INTO records(id,tenant_id,kind,fy,data,created) VALUES(?,?,?,?,?,?)',
+      )
+      .bind(
+        id,
+        tenant,
+        kind,
+        '2026–27',
+        JSON.stringify({
+          reference: id,
+          date: '2026-04-01',
+          status: 'Imported',
+          ...data,
+        }),
+        new Date().toISOString(),
+      )
+      .run();
+  }
+  await graphSeed('g-customer', 'customers', { name: 'Graph customer' });
+  await graphSeed('g-supplier', 'vendors', { name: 'Graph supplier' });
+  await graphSeed('g-purchase', 'purchase-invoices', {
+    partnerId: 'g-supplier',
+    amount: 50000,
+    relatedIds: ['g-invoice'],
+  });
+  await graphSeed('g-invoice', 'invoices', {
+    partnerId: 'g-customer',
+    totalUsd: '1000',
+    amount: 100000,
+    currency: 'INR',
+  });
+  await graphSeed('g-machine', 'machines', {
+    purchaseId: 'g-purchase',
+    salesInvoiceId: 'g-invoice',
+    serialNumber: 'GRAPH-SERIAL-001',
+  });
+  await graphSeed('g-sb', 'shipping-bills', { sourceId: 'g-invoice' });
+  await graphSeed('g-bl', 'bills-of-lading', { sourceId: 'g-sb' });
+  await graphSeed('g-receipt', 'receipts', {
+    invoiceId: 'g-invoice',
+    amount: 25000,
+    settledAmount: 25000,
+    currency: 'USD',
+    bankReference: 'GRAPH-BANK-001',
+  });
+  await graphSeed('g-ebrc', 'ebrc', {
+    sourceId: 'g-invoice',
+    receiptId: 'g-receipt',
+  });
+  await graphSeed('g-private', 'sales-internal', {
+    sourceId: 'g-invoice',
+    internalCosting: { secret: 'restricted' },
+  });
+  r = await call('relationships/g-purchase');
+  check('Supplier invoice traces equipment through export to eBRC', () => {
+    assert.equal(r.status, 200);
+    assert.ok(r.data.records.some((n) => n.id === 'g-ebrc'));
+    assert.ok(r.data.records.some((n) => n.id === 'g-machine'));
+  });
+  check('Partial receipt does not mark payment complete', () =>
+    assert.equal(
+      r.data.pending.find((p) => p.key === 'Customer receipt').complete,
+      false,
+    ),
+  );
+  check('Unverified related IDs remain review candidates', () =>
+    assert.ok(r.data.candidates.some((e) => e.source_id === 'g-purchase')),
+  );
+  const graphCandidate = r.data.candidates.find(
+    (e) => e.source_id === 'g-purchase',
+  );
+  r = await call(
+    'relationships/review/' + encodeURIComponent(graphCandidate.id),
+    {
+      status: 'Confirmed',
+      reason: 'Checked source allocation',
+      version: graphCandidate.version,
+    },
+  );
+  check('Relationship confirmation is saved', () =>
+    assert.equal(r.status, 200),
+  );
+  r = await call(
+    'relationships/review/' + encodeURIComponent(graphCandidate.id),
+    {
+      status: 'Rejected',
+      reason: 'Stale review',
+      version: graphCandidate.version,
+    },
+  );
+  check('Stale relationship review is rejected', () =>
+    assert.equal(r.status, 409),
+  );
+  r = await call('relationships/search?q=GRAPH-SERIAL');
+  check('Global search finds equipment by serial', () =>
+    assert.ok(r.data.some((n) => n.id === 'g-machine')),
+  );
+  r = await call('relationships/search?q=GRAPH-BANK');
+  check('Global search finds bank references', () =>
+    assert.ok(r.data.some((n) => n.id === 'g-receipt')),
+  );
+  r = await call('relationships/search?q=restricted', undefined, viewerCookie);
+  check('Relationship search hides internal sales records', () =>
+    assert.ok(!r.data.some((n) => n.id === 'g-private')),
+  );
+  r = await call('relationships/g-invoice', undefined, l.cookie.split(';')[0]);
+  check('Logistics cannot open financial graph roots', () =>
+    assert.equal(r.status, 404),
+  );
+  r = await call(
+    'relationships/link',
+    {
+      sourceId: 'g-invoice',
+      targetId: 'g-purchase',
+      type: 'COSTED_FROM',
+      reason: 'Forbidden',
+    },
+    viewerCookie,
+  );
+  check('Viewer cannot create relationships', () =>
+    assert.equal(r.status, 403),
+  );
+  r = await call('relationships/link', {
+    sourceId: 'g-invoice',
+    targetId: 'missing-other-tenant',
+    type: 'REFERENCES',
+    reason: 'Must fail',
+  });
+  check('Missing or cross-company relationship target is rejected', () =>
+    assert.equal(r.status, 400),
+  );
+  r = await call('relationships/g-invoice', undefined, '');
+  check('Graph requires authentication', () => assert.equal(r.status, 401));
+  r = await call('relationships/task', {
+    recordId: 'g-invoice',
+    name: 'Review BL',
+    owner: 'Export team',
+    dueDate: '2026-09-20',
+  });
+  check('Next action creates a linked task', () => assert.equal(r.status, 200));
+  const graphTask = r.data.id;
+  r = await call('relationships/g-invoice');
+  check('New tasks immediately appear in transaction graph', () =>
+    assert.ok(r.data.records.some((n) => n.id === graphTask)),
+  );
+  check('Financial reconciliation retains currency and partial balance', () =>
+    assert.equal(
+      r.data.financial.lines.find((n) => n.id === 'g-invoice').balance,
+      75000,
+    ),
+  );
+  r = await call('relationships/calculate', {
+    recordId: 'g-invoice',
+    rule: 'fx',
+    inputs: {
+      foreignAmount: 1000,
+      invoiceRate: 80,
+      bankRate: 82,
+      bankChargesInr: 100,
+    },
+  });
+  check('Versioned FX separates bank fees from exchange gain', () => {
+    assert.equal(r.data.result.cashInr, 81900);
+    assert.equal(r.data.result.fxGainInr, 2000);
+  });
+  r = await call('relationships/calculate', {
+    recordId: 'g-invoice',
+    rule: 'tax',
+    inputs: {
+      taxableInr: 1000,
+      gstRate: 18,
+      tcsRate: 1,
+      tdsRate: 1,
+      interstate: true,
+    },
+  });
+  check('Versioned tax rule uses explicit GST TCS and TDS bases', () => {
+    assert.equal(r.data.result.igst, 180);
+    assert.equal(r.data.result.payable, 1181.8);
+  });
+  r = await call('relationships/calculate', {
+    recordId: 'g-invoice',
+    rule: 'fx',
+    inputs: {
+      foreignAmount: 1000,
+      invoiceRate: 0,
+      bankRate: 82,
+      bankChargesInr: 0,
+    },
+  });
+  check('Invalid FX rate is rejected', () => assert.equal(r.status, 400));
+  await testDB
+    .prepare('UPDATE records SET data=?,version=version+1 WHERE id=?')
+    .bind(
+      JSON.stringify({ reference: 'Revised supplier invoice', amount: 60000 }),
+      'g-purchase',
+    )
+    .run();
+  r = await call('relationships/g-purchase');
+  check('Commercial edits preserve the prior version', () =>
+    assert.ok(r.data.versions.some((v) => JSON.parse(v.data).amount === 50000)),
+  );
+  let graphVersionTamper = false;
+  try {
+    await testDB
+      .prepare('DELETE FROM record_versions WHERE record_id=?')
+      .bind('g-purchase')
+      .run();
+  } catch {
+    graphVersionTamper = true;
+  }
+  check('Prior versions cannot be deleted', () =>
+    assert.ok(graphVersionTamper),
+  );
+  r = await call('relationships/control');
+  check('Control tower reports missing export evidence', () =>
+    assert.ok(
+      r.data.exceptions.some(
+        (e) => e.recordId === 'g-invoice' && e.category === 'Forex reference',
+      ),
+    ),
+  );
+  r = await call('relationships/dictionary');
+  check(
+    'Data dictionary exposes fields, workflow and calculation versions',
+    () => {
+      assert.ok(r.data.entities.some((e) => e.entity === 'ebrc'));
+      assert.ok(r.data.rules.every((r) => r.version === 1));
+    },
+  );
   r = await call('logout', {});
   r = await call('records');
   check('Logout revokes the session', () => assert.equal(r.status, 401));

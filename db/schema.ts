@@ -1,5 +1,6 @@
 import {
   sqliteTable,
+  real,
   blob,
   text,
   integer,
@@ -165,3 +166,44 @@ export const workbookFacts = sqliteTable(
   },
   (t) => [index('workbook_facts_scope').on(t.tenantId, t.batchId, t.domain)],
 );
+
+export const entityRelationships = sqliteTable(
+  'entity_relationships',
+  {
+    id: text('id').primaryKey(),
+    tenantId: text('tenant_id').notNull(),
+    sourceId: text('source_id').notNull(),
+    targetId: text('target_id').notNull(),
+    sourceType: text('source_type').notNull(),
+    targetType: text('target_type').notNull(),
+    relationshipType: text('relationship_type').notNull(),
+    status: text('status').notNull(),
+    origin: text('origin').notNull(),
+    confidence: real('confidence').notNull(),
+    evidence: text('evidence').notNull(),
+    sourceLine: text('source_line').notNull().default(''),
+    targetLine: text('target_line').notNull().default(''),
+    createdBy: text('created_by').notNull(),
+    created: text('created').notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (t) => [index('relationships_scope').on(t.tenantId, t.sourceId, t.targetId)],
+);
+export const recordVersions = sqliteTable('record_versions', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  recordId: text('record_id').notNull(),
+  version: integer('version').notNull(),
+  data: text('data').notNull(),
+  created: text('created').notNull(),
+});
+export const calculationRuns = sqliteTable('calculation_runs', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  recordId: text('record_id').notNull(),
+  ruleId: text('rule_id').notNull(),
+  ruleVersion: integer('rule_version').notNull(),
+  data: text('data').notNull(),
+  createdBy: text('created_by').notNull(),
+  created: text('created').notNull(),
+});

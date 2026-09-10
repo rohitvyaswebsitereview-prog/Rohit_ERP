@@ -657,6 +657,15 @@ export default function Register({
           </SheetHeader>
           {selected && (
             <div className="detail-body">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  window.location.href =
+                    '/record360?record=' + encodeURIComponent(selected.id);
+                }}
+              >
+                Open 360° record
+              </Button>
               {selected.status && <Status value={selected.status} />}
               <dl>
                 {Object.entries(selected)

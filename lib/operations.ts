@@ -650,9 +650,45 @@ add(
     f('vehicle', 'Vehicle number'),
   ],
 );
+add(
+  'remittances',
+  'Customer Remittances',
+  'Finance',
+  { documents: ['Bank advice', 'FIRC / eFIRC'] },
+  [
+    ref('sourceId', 'Commercial invoice', 'invoices', true),
+    ref('receiptId', 'Customer receipt', 'receipts', true),
+    ref('bankId', 'Bank', 'master-bank-details'),
+    f('bankReference', 'Bank reference', 'text', true),
+    f('amount', 'Foreign currency amount', 'number', true),
+    f('realisationDate', 'Bank realisation date', 'date', true),
+  ],
+);
+add(
+  'forex',
+  'Forex Realisations',
+  'Finance',
+  { documents: ['Conversion advice', 'Bank charges advice'] },
+  [
+    ref('sourceId', 'Remittance', 'remittances', true),
+    ref('invoiceId', 'Commercial invoice', 'invoices', true),
+    ref('receiptId', 'Receipt', 'receipts', true),
+    f('bankReference', 'Bank conversion reference', 'text', true),
+    f('foreignAmount', 'Foreign amount', 'number', true),
+    f('invoiceRate', 'Invoice exchange rate', 'number', true),
+    f('bankRate', 'Bank exchange rate', 'number', true),
+    f('bankChargesInr', 'Bank charges INR', 'number', true),
+    f('realisationDate', 'Realisation date', 'date', true),
+  ],
+);
 add('ebrc', 'eBRC', 'Compliance', { documents: ['eBRC', 'FIRC / eFIRC'] }, [
   ref('sourceId', 'Commercial invoice', 'invoices', true),
   ref('receiptId', 'Receipt', 'receipts', true),
+  ref('remittanceId', 'Bank remittance', 'remittances'),
+  ref('forexId', 'Forex conversion', 'forex'),
+  ref('bankId', 'Bank', 'master-bank-details'),
+  f('realisationDate', 'Realisation date', 'date'),
+  f('bankReference', 'Bank reference'),
   f('number', 'eBRC number', 'text', true),
   f('amount', 'Realised value', 'number', true),
 ]);
@@ -1244,6 +1280,7 @@ export const operationRoutes: Record<string, string> = {
   'finance-receipts': 'receipts',
   'finance-payments': 'payments',
   'finance-ebrc': 'ebrc',
+  'finance-remittance-forex': 'remittances',
   'finance-export-incentives': 'incentives',
   'compliance-e-way-bill': 'eway-bills',
   'production-production-orders': 'production-orders',

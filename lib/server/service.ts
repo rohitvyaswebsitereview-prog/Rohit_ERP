@@ -1,3 +1,4 @@
+import { relationships } from './relationships';
 import { workbook } from './workbook';
 import { sales } from './sales';
 import { opMap, permittedOperation } from '../operations';
@@ -460,6 +461,8 @@ export async function handle(req: Request) {
         { error: 'Your session has expired. Please sign in again.' },
         401,
       );
+    if (path === 'relationships' || path.startsWith('relationships/'))
+      return await relationships(req, path, b, u, db());
     if (path === 'workbook' || path.startsWith('workbook/'))
       return await workbook(req, path, u, db());
     if (path.startsWith('sales/'))

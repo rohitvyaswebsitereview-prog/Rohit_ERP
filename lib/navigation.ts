@@ -423,3 +423,23 @@ modules
   .find((m) => m.key === 'settings')
   ?.items.push(['', 'workbook-data', 'Business Data & Reconciliation']);
 titles['workbook-data'] = 'Business Data & Reconciliation';
+
+modules.push({
+  key: 'control-tower',
+  label: 'Control Tower',
+  icon: ListChecks,
+  items: [],
+});
+titles['record360'] = 'Record 360°';
+titles['control-tower'] = 'Control Tower';
+titles['data-dictionary'] = 'Data dictionary & rules';
+
+modules
+  .find((m) => m.key === 'finance')
+  ?.items.push(
+    ['', 'remittances', 'Customer Remittances'],
+    ['', 'forex', 'Forex Realisations'],
+  );
+modules
+  .find((m) => m.key === 'settings')
+  ?.items.push(['', 'data-dictionary', 'Data Dictionary & Rules']);

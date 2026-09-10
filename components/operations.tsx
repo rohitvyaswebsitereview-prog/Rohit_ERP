@@ -1,5 +1,5 @@
 'use client';
-import { WorkbookRecord } from './workbook-data';
+import { Record360 } from './record-360';
 import { useEffect, useState } from 'react';
 import {
   Plus,
@@ -153,6 +153,7 @@ export default function Operations({
     [selected, setSelected] = useState<string | null>(initialId || null),
     [detail, setDetail] = useState<any>(null),
     [editing, setEditing] = useState(false),
+    [manage, setManage] = useState(false),
     [draft, setDraft] = useState<any>({}),
     [tab, setTab] = useState('Summary'),
     [busy, setBusy] = useState(false),
@@ -162,6 +163,11 @@ export default function Operations({
     [revision, setRevision] = useState(0),
     [page, setPage] = useState(0),
     [documents, setDocuments] = useState<any[]>([]);
+  useEffect(() => {
+    setManage(
+      new URLSearchParams(window.location.search).get('actions') === '1',
+    );
+  }, [selected]);
   const canWrite = m && permittedOperation(m, user.role, true);
   const reload = () => {
     setRevision((n) => n + 1);
@@ -384,17 +390,19 @@ export default function Operations({
         Cancelled: [],
       }
     : m.transitions;
-  if (record?.importLocked && !editing)
+  if (record && !editing && !manage)
     return (
-      <WorkbookRecord
-        record={record}
+      <Record360
+        id={record.id}
+        go={go}
         back={() => {
-          setSelected(null);
+          setSelected('');
           setDetail(null);
         }}
-        go={go}
+        onManage={!record.importLocked ? () => setManage(true) : undefined}
       />
     );
+
   return (
     <div className="op-workspace">
       {error && (
