@@ -1,6 +1,7 @@
 'use client';
 import Masters from './masters';
 import Operations from './operations';
+import WorkbookData, { WorkbookOverview } from './workbook-data';
 import SalesDocuments from './sales-documents';
 import { salesKinds } from '@/lib/sales-engine';
 import OperationAdmin from './operation-admin';
@@ -694,6 +695,9 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
           {route === 'dashboard' ? (
             validRange ? (
               <>
+                {['Admin', 'Finance'].includes(user.role) && (
+                  <WorkbookOverview go={go} fy={fy} />
+                )}
                 <OperationalOverview revision={revision} go={go} />
                 <Dashboard
                   fy={fy}
@@ -896,6 +900,7 @@ function PageContent({
         {error}
       </div>
     );
+  if (route === 'workbook-data') return <WorkbookData fy={fy} go={go} />;
   if (route === 'masters') return <Masters go={go} />;
   if (
     ['administration-permissions', 'administration-login-security'].includes(

@@ -418,3 +418,8 @@ if (settingsNav)
     ['', 'price-lists', 'Price Lists'],
     ['', 'standard-clauses', 'Standard Clauses'],
   ];
+
+modules
+  .find((m) => m.key === 'settings')
+  ?.items.push(['', 'workbook-data', 'Business Data & Reconciliation']);
+titles['workbook-data'] = 'Business Data & Reconciliation';

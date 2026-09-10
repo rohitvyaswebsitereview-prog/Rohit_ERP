@@ -1,3 +1,4 @@
+import { workbook } from './workbook';
 import { sales } from './sales';
 import { opMap, permittedOperation } from '../operations';
 import { operations } from './operations';
@@ -459,6 +460,8 @@ export async function handle(req: Request) {
         { error: 'Your session has expired. Please sign in again.' },
         401,
       );
+    if (path === 'workbook' || path.startsWith('workbook/'))
+      return await workbook(req, path, u, db());
     if (path.startsWith('sales/'))
       return await sales(req, path, b, u, db(), (env as any).FILES);
     if (path.startsWith('operations/'))

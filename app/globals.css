@@ -2875,3 +2875,116 @@ button[data-slot='button'][data-size='icon'] {
     break-inside: avoid;
   }
 }
+
+.workbook-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.workbook-overview h3 {
+  font-weight: 650;
+  margin-bottom: 8px;
+}
+.workbook-overview p {
+  color: #64748b;
+  max-width: 850px;
+  line-height: 1.6;
+}
+.workbook-workspace {
+  max-width: 1480px;
+  margin: auto;
+}
+.workbook-workspace > .field {
+  max-width: 620px;
+  margin: 18px 0;
+}
+.workbook-report {
+  padding: 22px;
+  margin: 18px 0;
+}
+.workbook-report > h3 {
+  font-weight: 650;
+  margin: 20px 0 12px;
+}
+.workbook-report .op-note {
+  margin: 14px 0;
+  line-height: 1.6;
+}
+.workbook-report td {
+  max-width: 420px;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+.workbook-cell {
+  min-width: 105px;
+  max-width: 260px;
+  max-height: 100px;
+  overflow: auto;
+  text-align: left;
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+.workbook-cell:focus-visible {
+  outline: 2px solid #2563eb;
+}
+.workbook-cell-detail {
+  border-top: 1px solid #dce3ed;
+  padding: 20px 0;
+}
+.workbook-cell-detail pre,
+.workbook-source-row pre {
+  white-space: pre-wrap;
+  max-width: 650px;
+  max-height: 350px;
+  overflow: auto;
+  background: #f4f6f9;
+  padding: 12px;
+}
+.workbook-source-row {
+  margin: 20px 0;
+}
+.workbook-source-row > summary {
+  font-weight: 600;
+  padding: 12px;
+  cursor: pointer;
+  background: #f4f6f9;
+}
+.workbook-workspace .op-toolbar > label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .workbook-overview {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .workbook-report {
+    padding: 12px;
+  }
+  .workbook-workspace .op-toolbar {
+    flex-wrap: wrap;
+  }
+}
+.workbook-overview {
+  flex-wrap: wrap;
+}
+.workbook-headline-totals {
+  display: flex;
+  gap: 30px;
+  flex-wrap: wrap;
+  width: 100%;
+  order: 2;
+}
+.workbook-headline-totals small {
+  display: block;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+.workbook-headline-totals strong {
+  font-size: 20px;
+}

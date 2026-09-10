@@ -1118,6 +1118,15 @@ for (const key of ['customers', 'vendors'])
 operationModules
   .find((m) => m.key === 'products')!
   .fields.push(ref('taxCodeId', 'Default sales tax code', 'tax-codes'));
+for (const [key, label] of [
+  ['sales-credit-notes', 'Sales Credit Notes'],
+  ['purchase-debit-notes', 'Purchase Debit Notes'],
+  ['expense-credit-notes', 'Expense Credit Notes'],
+])
+  add(key, label, 'Finance', {
+    transitions: { Imported: [] },
+    roles: financial,
+  });
 export const opMap = Object.fromEntries(
   operationModules.map((m) => [m.key, m]),
 );

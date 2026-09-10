@@ -1,4 +1,5 @@
 'use client';
+import { WorkbookRecord } from './workbook-data';
 import { useEffect, useState } from 'react';
 import {
   Plus,
@@ -383,6 +384,17 @@ export default function Operations({
         Cancelled: [],
       }
     : m.transitions;
+  if (record?.importLocked && !editing)
+    return (
+      <WorkbookRecord
+        record={record}
+        back={() => {
+          setSelected(null);
+          setDetail(null);
+        }}
+        go={go}
+      />
+    );
   return (
     <div className="op-workspace">
       {error && (

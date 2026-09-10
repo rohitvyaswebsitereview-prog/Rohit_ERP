@@ -171,6 +171,14 @@ export async function sales(
     return response({ error: 'Read-only access.' }, 403);
   if (existing && Number(b.version) !== existing.version)
     return response({ error: 'Document changed. Reload before saving.' }, 409);
+  if (existing?.importLocked)
+    return response(
+      {
+        error:
+          'Historical source records are locked to prevent duplicate posting.',
+      },
+      409,
+    );
   const reason = String(b.reason || '').trim();
   const update = (d: any) =>
     db

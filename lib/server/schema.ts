@@ -1,4 +1,10 @@
 export const schema = [
+  `CREATE TABLE IF NOT EXISTS workbook_imports(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,filename TEXT NOT NULL,sha256 TEXT NOT NULL,metadata TEXT NOT NULL,original BLOB NOT NULL,created TEXT NOT NULL,UNIQUE(tenant_id,sha256))`,
+  `CREATE TABLE IF NOT EXISTS workbook_sheets(batch_id TEXT NOT NULL,sheet_index INTEGER NOT NULL,name TEXT NOT NULL,metadata TEXT NOT NULL,PRIMARY KEY(batch_id,sheet_index))`,
+  `CREATE TABLE IF NOT EXISTS workbook_rows(batch_id TEXT NOT NULL,sheet_index INTEGER NOT NULL,row_number INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(batch_id,sheet_index,row_number))`,
+  `CREATE TABLE IF NOT EXISTS workbook_facts(id TEXT PRIMARY KEY,batch_id TEXT NOT NULL,tenant_id TEXT NOT NULL,domain TEXT NOT NULL,data TEXT NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS workbook_facts_scope ON workbook_facts(tenant_id,batch_id,domain)`,
+
   `CREATE TABLE IF NOT EXISTS document_sequences(id TEXT PRIMARY KEY,value INTEGER NOT NULL)`,
   // Applied after records exists; unique operational identities are defined below.
 

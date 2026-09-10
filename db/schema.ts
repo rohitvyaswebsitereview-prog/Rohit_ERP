@@ -1,5 +1,6 @@
 import {
   sqliteTable,
+  blob,
   text,
   integer,
   index,
@@ -119,3 +120,48 @@ export const documentSequences = sqliteTable('document_sequences', {
   id: text('id').primaryKey(),
   value: integer('value').notNull(),
 });
+
+export const workbookImports = sqliteTable(
+  'workbook_imports',
+  {
+    id: text('id').primaryKey(),
+    tenantId: text('tenant_id').notNull(),
+    filename: text('filename').notNull(),
+    sha256: text('sha256').notNull(),
+    metadata: text('metadata').notNull(),
+    original: blob('original', { mode: 'buffer' }).notNull(),
+    created: text('created').notNull(),
+  },
+  (t) => [uniqueIndex('workbook_imports_source').on(t.tenantId, t.sha256)],
+);
+export const workbookSheets = sqliteTable(
+  'workbook_sheets',
+  {
+    batchId: text('batch_id').notNull(),
+    sheetIndex: integer('sheet_index').notNull(),
+    name: text('name').notNull(),
+    metadata: text('metadata').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.batchId, t.sheetIndex] })],
+);
+export const workbookRows = sqliteTable(
+  'workbook_rows',
+  {
+    batchId: text('batch_id').notNull(),
+    sheetIndex: integer('sheet_index').notNull(),
+    rowNumber: integer('row_number').notNull(),
+    data: text('data').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.batchId, t.sheetIndex, t.rowNumber] })],
+);
+export const workbookFacts = sqliteTable(
+  'workbook_facts',
+  {
+    id: text('id').primaryKey(),
+    batchId: text('batch_id').notNull(),
+    tenantId: text('tenant_id').notNull(),
+    domain: text('domain').notNull(),
+    data: text('data').notNull(),
+  },
+  (t) => [index('workbook_facts_scope').on(t.tenantId, t.batchId, t.domain)],
+);

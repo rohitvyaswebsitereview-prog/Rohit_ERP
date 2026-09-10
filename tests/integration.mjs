@@ -1132,6 +1132,276 @@ try {
     assert.equal(p.totals.gst, 1800);
     assert.equal(p.totals.tcs, 118);
   });
+  await build({
+    entryPoints: ['lib/workbook-reports.ts'],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    outfile: '.test-output/workbook-reports.mjs',
+  });
+  const { workbookReports } =
+    await import('../.test-output/workbook-reports.mjs');
+  const sourceFacts = [
+    {
+      domain: 'sales',
+      type: 'Export Sales',
+      invoice: 'WB-INV',
+      party: 'Workbook customer',
+      date: '2026-04-01',
+      fy: '2026–27',
+      usd: '100',
+      basic: '9000',
+      invoiceValue: '10620',
+      igst: '1620',
+      exchangeRate: '90',
+      settledUsd: '60',
+      cashUsd: '59',
+      charges: '1',
+      conversionRate: '91',
+      paid: '5369',
+      paymentDate: '2026-04-02',
+      hasPayment: true,
+      bankRef: 'SHARED',
+    },
+    {
+      domain: 'sales',
+      type: 'Part Receipts',
+      invoice: 'WB-INV',
+      party: 'Workbook customer',
+      date: '2026-04-01',
+      fy: '2026–27',
+      settledUsd: '40',
+      cashUsd: '40',
+      paid: '3640',
+      conversionRate: '91',
+      paymentDate: '2026-04-05',
+      hasPayment: true,
+      bankRef: 'SECOND',
+    },
+    {
+      domain: 'purchase',
+      type: 'Purchase',
+      invoice: 'SAME-NO',
+      party: 'Supplier A',
+      date: '2026-04-01',
+      fy: '2026–27',
+      payable: '100',
+      paid: '50',
+      basic: '80',
+      serial: 'MACHINE-1',
+      inventoryStatus: 'Not Sold',
+      linkedInvoice: 'WB-INV',
+    },
+    {
+      domain: 'purchase',
+      type: 'Part Payment',
+      invoice: 'SAME-NO',
+      party: 'Supplier A',
+      date: '2026-04-01',
+      fy: '2026–27',
+      payable: '0',
+      paid: '50',
+    },
+    {
+      domain: 'purchase',
+      type: 'Purchase',
+      invoice: 'SAME-NO',
+      party: 'Supplier B',
+      date: '2026-04-01',
+      fy: '2026–27',
+      payable: '200',
+      paid: '0',
+      basic: '160',
+    },
+    {
+      domain: 'expense',
+      type: 'Freight',
+      invoice: 'EXP-1',
+      party: 'Forwarder',
+      date: '2026-04-01',
+      fy: '2026–27',
+      basic: '10',
+      linkedInvoice: 'WB-INV, OTHER',
+    },
+  ];
+  const workbookTables = workbookReports(sourceFacts, '2026–27', '2026-09-10');
+  const wbtable = (k) => workbookTables.find((t) => t.key === k);
+  check(
+    'Workbook receipts settle one invoice without duplicate revenue',
+    () => {
+      const x = wbtable('debtors-usd').rows[0];
+      assert.equal(x.value, 10000);
+      assert.equal(x.paid, 10000);
+      assert.equal(x.pending, 0);
+    },
+  );
+  check('Workbook INR balances use invoice FX, not cash conversion FX', () => {
+    assert.equal(wbtable('debtors-inr').rows[0].paid, 900000);
+    assert.equal(wbtable('incentives').rows[0].fx, 10000);
+  });
+  check('Supplier invoice numbers are scoped to their supplier', () => {
+    const rows = wbtable('supplier-payments').rows;
+    assert.equal(rows.length, 2);
+    assert.equal(rows.find((r) => r.party === 'Supplier A').balance, 0);
+    assert.equal(rows.find((r) => r.party === 'Supplier B').balance, 20000);
+  });
+  check('Shared expenses are not arbitrarily allocated twice', () => {
+    assert.equal(wbtable('shared-expenses').rows.length, 1);
+    assert.equal(wbtable('gross-profit').rows[0].expenses, 0);
+  });
+  check('Inventory is rebuilt from purchase rows, not payment rows', () =>
+    assert.equal(wbtable('inventory').rows.length, 1),
+  );
+  check('IGST receivable stays separate from settled customer debt', () =>
+    assert.equal(wbtable('igst').rows[0].pending, 162000),
+  );
+  const batchMeta = {
+    batchId: 'test-import',
+    sheets: [
+      {
+        index: 0,
+        name: 'Test source',
+        maxRow: 2,
+        maxColumn: 2,
+        cellCount: 2,
+        state: 'hidden',
+      },
+    ],
+    issues: [],
+    sourceRowCount: sourceFacts.length,
+  };
+  const wbTenant = (
+    await testDB
+      .prepare("SELECT tenant_id FROM users WHERE email='test@example.test'")
+      .first()
+  ).tenant_id;
+  await testDB
+    .prepare('INSERT INTO workbook_imports VALUES(?,?,?,?,?,?,?)')
+    .bind(
+      'test-import',
+      wbTenant,
+      'test.xlsx',
+      'testhash',
+      JSON.stringify(batchMeta),
+      new Uint8Array([80, 75, 3, 4]).buffer,
+      new Date().toISOString(),
+    )
+    .run();
+  await testDB
+    .prepare('INSERT INTO workbook_sheets VALUES(?,?,?,?)')
+    .bind('test-import', 0, 'Test source', JSON.stringify(batchMeta.sheets[0]))
+    .run();
+  await testDB
+    .prepare('INSERT INTO workbook_rows VALUES(?,?,?,?)')
+    .bind(
+      'test-import',
+      0,
+      1,
+      JSON.stringify([
+        {
+          address: 'A1',
+          column: 1,
+          cached: 'Private source heading',
+          value: 'Private source heading',
+          type: 's',
+        },
+      ]),
+    )
+    .run();
+  await testDB
+    .prepare('INSERT INTO workbook_rows VALUES(?,?,?,?)')
+    .bind(
+      'test-import',
+      0,
+      2,
+      JSON.stringify([
+        { address: 'B2', column: 2, cached: 20, value: '=10+10', type: 'f' },
+      ]),
+    )
+    .run();
+  for (const [i, f] of sourceFacts.entries())
+    await testDB
+      .prepare('INSERT INTO workbook_facts VALUES(?,?,?,?,?)')
+      .bind(
+        'wb-fact-' + i,
+        'test-import',
+        wbTenant,
+        f.domain,
+        JSON.stringify(f),
+      )
+      .run();
+  r = await call('workbook');
+  check('Workbook import coverage is available to authorised users', () =>
+    assert.equal(r.data.sourceRowCount, 6),
+  );
+  r = await call('workbook/sheet?sheet=0');
+  check('Source formulas and hidden sheets remain inspectable', () => {
+    assert.equal(r.data.sheet.state, 'hidden');
+    assert.equal(r.data.rows[1].cells[0].value, '=10+10');
+  });
+  r = await call('workbook/reports?fy=2026%E2%80%9327&asOf=2026-09-10');
+  check('Workbook reports load through authenticated API', () =>
+    assert.equal(
+      r.data.tables.find((t) => t.key === 'debtors-usd').rows[0].pending,
+      0,
+    ),
+  );
+  r = await call('workbook', undefined, viewerCookie);
+  check('Raw workbook data is restricted by role', () =>
+    assert.equal(r.status, 403),
+  );
+  r = await call('workbook', undefined, '');
+  check('Raw workbook data requires authentication', () =>
+    assert.equal(r.status, 401),
+  );
+  const download = await mf.dispatchFetch(
+    'http://localhost/api/v1/workbook/download',
+    { headers: { Cookie: cookie } },
+  );
+  check('Original workbook download returns preserved bytes', () =>
+    assert.equal(download.status, 200),
+  );
+  assert.deepEqual(
+    [...new Uint8Array(await download.arrayBuffer())],
+    [80, 75, 3, 4],
+  );
+  const locked = {
+    operation: true,
+    importLocked: true,
+    reference: 'IMPORTED-LOCK',
+    date: '2026-04-01',
+    status: 'Imported',
+    sourceWorkbook: { batchId: 'test-import', sheet: 'Test source', rows: [2] },
+  };
+  await testDB
+    .prepare(
+      'INSERT INTO records(id,tenant_id,kind,fy,data,created) VALUES(?,?,?,?,?,?)',
+    )
+    .bind(
+      'locked-import',
+      wbTenant,
+      'invoices',
+      '2026–27',
+      JSON.stringify(locked),
+      new Date().toISOString(),
+    )
+    .run();
+  r = await call('operations/invoices/locked-import/status', {
+    status: 'Posted',
+    version: 1,
+    reason: 'Must not post',
+  });
+  check('Imported financial records cannot be reposted', () =>
+    assert.equal(r.status, 409),
+  );
+  r = await call('sales/invoices/locked-import/save', { version: 1 });
+  check('Sales editor cannot overwrite workbook records', () =>
+    assert.equal(r.status, 409),
+  );
+  r = await call('workbook/record/locked-import');
+  check('ERP record resolves to original workbook cells', () =>
+    assert.equal(r.data.rows[0].cells[0].address, 'B2'),
+  );
   r = await call('logout', {});
   r = await call('records');
   check('Logout revokes the session', () => assert.equal(r.status, 401));

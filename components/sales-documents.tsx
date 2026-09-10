@@ -1,4 +1,5 @@
 'use client';
+import { WorkbookRecord } from './workbook-data';
 import { useEffect, useRef, useState } from 'react';
 import {
   Plus,
@@ -546,6 +547,17 @@ export default function SalesDocuments({
   } catch {}
   if (!canWrite && user.role !== 'Viewer')
     return <Blank title="Sales access unavailable" />;
+  if (record?.importLocked && !editing)
+    return (
+      <WorkbookRecord
+        record={record}
+        back={() => {
+          setSelected('');
+          setDetail(null);
+        }}
+        go={go}
+      />
+    );
   return (
     <div className="sales-workspace">
       {error && (

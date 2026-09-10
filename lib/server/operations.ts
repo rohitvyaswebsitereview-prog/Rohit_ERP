@@ -249,6 +249,18 @@ export async function operations(
     });
   }
   if (
+    existing?.importLocked &&
+    req.method === 'POST' &&
+    !['document', 'print', 'email-draft'].includes(action || '')
+  )
+    return json(
+      {
+        error:
+          'Historical source records are locked to prevent duplicate posting.',
+      },
+      409,
+    );
+  if (
     existing?.salesEngine === 2 &&
     action === 'status' &&
     b.status === 'Posted' &&
