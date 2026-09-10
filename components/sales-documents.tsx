@@ -648,7 +648,15 @@ export default function SalesDocuments({
                 )
                 .map((t) => (
                   <TabsTrigger key={t} value={t}>
-                    {t}
+                    {(
+                      {
+                        General: 'Basics',
+                        'Items & Pricing': 'Products',
+                        Delivery: 'Shipment',
+                        'Terms & Notes': 'Terms',
+                        'Internal Costing': 'Costing (optional)',
+                      } as Record<string, string>
+                    )[t] || t}
                   </TabsTrigger>
                 ))}
             </TabsList>

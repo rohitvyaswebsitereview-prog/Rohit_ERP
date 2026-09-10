@@ -430,7 +430,9 @@ modules.push({
   icon: ListChecks,
   items: [],
 });
-titles['record360'] = 'Record 360°';
+titles['record360'] = 'Record details';
+titles['all-tools'] = 'All tools';
+titles['workspace-settings'] = 'Settings';
 titles['control-tower'] = 'Control Tower';
 titles['data-dictionary'] = 'Data dictionary & rules';
 

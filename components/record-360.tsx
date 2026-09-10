@@ -95,7 +95,9 @@ export function Record360({
     };
   }, [id, revision]);
   useEffect(() => {
-    setTab('Overview');
+    const requested =
+      new URLSearchParams(window.location.search).get('section') || 'Overview';
+    setTab(tabs.includes(requested) ? requested : 'Overview');
     setTask({});
     setLink({ type: 'REFERENCES' });
     setInputs({});
@@ -203,11 +205,11 @@ export function Record360({
           <Button variant="outline" onClick={back || (() => go(r.kind))}>
             ← Back
           </Button>
-          <span>{entityType(r.kind)} · 360°</span>
+          <span>{entityType(r.kind)}</span>
           <div className="inline-actions">
             {onManage && (
               <Button variant="outline" onClick={onManage}>
-                Record actions
+                Actions
               </Button>
             )}
             {!onManage && !r.importLocked && (
@@ -219,7 +221,7 @@ export function Record360({
                   )
                 }
               >
-                Record actions
+                Actions
               </Button>
             )}
             <Button variant="outline" onClick={() => window.print()}>
@@ -244,40 +246,77 @@ export function Record360({
         </p>
       )}
       {data.pending.length > 0 && (
-        <div className="r360-lifecycle" aria-label="Lifecycle evidence">
-          {data.pending.map((p: any) => (
-            <button
-              key={p.key}
-              onClick={() => {
-                setTab('Tasks');
-                setTask({ name: p.action, owner: p.owner });
-              }}
-              className={p.complete ? 'complete' : 'pending'}
-            >
-              {p.complete ? '✓' : '○'} {p.label}
-            </button>
-          ))}
-        </div>
+        <details className="simple-progress">
+          <summary>
+            Shipment progress ·{' '}
+            {data.pending.filter((p: any) => p.complete).length} of{' '}
+            {data.pending.length} checks recorded
+          </summary>
+          <div className="r360-lifecycle" aria-label="Lifecycle evidence">
+            {data.pending.map((p: any) => (
+              <button
+                key={p.key}
+                onClick={() => {
+                  setTab('Tasks');
+                  setTask({ name: p.action, owner: p.owner });
+                }}
+                className={p.complete ? 'complete' : 'pending'}
+              >
+                {p.complete ? '✓' : '○'} {p.label}
+              </button>
+            ))}
+          </div>
+        </details>
       )}
       <nav className="r360-tabs" aria-label="Record sections">
-        {tabs
-          .filter((t) => t !== 'Source & Migration' || data.sourceAvailable)
-          .map((t) => (
-            <button
-              key={t}
-              aria-current={tab === t ? 'page' : undefined}
-              onClick={() => setTab(t)}
-            >
-              {t}
-            </button>
-          ))}
+        {[
+          ['Overview', 'Details'],
+          ['Documents', 'Documents'],
+          ['Finance', 'Payments'],
+          ['Timeline', 'Activity'],
+        ].map(([key, title]) => (
+          <button
+            key={key}
+            aria-current={tab === key ? 'page' : undefined}
+            onClick={() => setTab(key)}
+          >
+            {title}
+          </button>
+        ))}
+        <label className="simple-more">
+          More{' '}
+          <select
+            aria-label="More record sections"
+            value={
+              ['Overview', 'Documents', 'Finance', 'Timeline'].includes(tab)
+                ? ''
+                : tab
+            }
+            onChange={(e) => e.target.value && setTab(e.target.value)}
+          >
+            <option value="">Choose section</option>
+            {tabs
+              .filter(
+                (t) =>
+                  !['Overview', 'Documents', 'Finance', 'Timeline'].includes(
+                    t,
+                  ) &&
+                  (t !== 'Source & Migration' || data.sourceAvailable),
+              )
+              .map((t) => (
+                <option key={t} value={t}>
+                  {t === '360°' ? 'Connections' : t}
+                </option>
+              ))}
+          </select>
+        </label>
       </nav>
       {tab === 'Overview' && (
         <div className="r360-columns">
           <section className="widget">
             <h3>Business information</h3>
             <dl className="r360-fields">
-              {business.map(([k, v]) => (
+              {business.slice(0, 8).map(([k, v]) => (
                 <div key={k}>
                   <dt>{label(k)}</dt>
                   <dd>
@@ -320,13 +359,29 @@ export function Record360({
                 </div>
               </>
             )}
-            <h3>Related transactions</h3>
-            <RelatedRecords records={nodes.slice(0, 12)} go={go} />
-            {nodes.length > 12 && (
-              <Button onClick={() => setTab('Transactions')}>
-                View all {nodes.length} linked records
-              </Button>
+            {business.length > 8 && (
+              <details>
+                <summary>Additional details</summary>
+                <dl className="r360-fields">
+                  {business.slice(8).map(([k, v]) => (
+                    <div key={k}>
+                      <dt>{label(k)}</dt>
+                      <dd>{String(v)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
             )}
+            <details>
+              <summary>Related transactions ({nodes.length})</summary>
+
+              <RelatedRecords records={nodes.slice(0, 12)} go={go} />
+              {nodes.length > 12 && (
+                <Button onClick={() => setTab('Transactions')}>
+                  View all {nodes.length} linked records
+                </Button>
+              )}
+            </details>
           </section>
           <aside className="widget">
             <h3>Financial position</h3>
@@ -363,29 +418,34 @@ export function Record360({
                   : 'Review this record and its related transactions.'}
               </p>
             )}
-            <h3>eBRC readiness</h3>
-            <p>
-              {data.pending.length
-                ? data.pending.filter(
-                    (p: any) =>
-                      !p.complete &&
-                      !['eBRC', 'DBK', 'RoDTEP', 'IGST refund'].includes(p.key),
-                  ).length
-                  ? 'Not ready — evidence is missing'
-                  : 'Core evidence recorded — review required documents and bank requirements'
-                : 'No confirmed export invoice linked.'}
-            </p>
-            <p className="muted">
-              A linked record is evidence of recording, not bank or government
-              certification. Receipt coverage and required documents must be
-              reconciled before closure.
-            </p>
-            <h3>Relationship confidence</h3>
-            <p>{data.edges.length} confirmed / reviewed connections</p>
-            <p>{data.candidates.length} potential matches to review</p>
-            <Button variant="outline" onClick={() => setTab('360°')}>
-              Explore connections
-            </Button>
+            <details>
+              <summary>Export readiness & connections</summary>
+              <h3>eBRC readiness</h3>
+              <p>
+                {data.pending.length
+                  ? data.pending.filter(
+                      (p: any) =>
+                        !p.complete &&
+                        !['eBRC', 'DBK', 'RoDTEP', 'IGST refund'].includes(
+                          p.key,
+                        ),
+                    ).length
+                    ? 'Not ready — evidence is missing'
+                    : 'Core evidence recorded — review required documents and bank requirements'
+                  : 'No confirmed export invoice linked.'}
+              </p>
+              <p className="muted">
+                A linked record is evidence of recording, not bank or government
+                certification. Receipt coverage and required documents must be
+                reconciled before closure.
+              </p>
+              <h3>Relationship confidence</h3>
+              <p>{data.edges.length} confirmed / reviewed connections</p>
+              <p>{data.candidates.length} potential matches to review</p>
+              <Button variant="outline" onClick={() => setTab('360°')}>
+                Explore connections
+              </Button>
+            </details>
           </aside>
         </div>
       )}
@@ -481,105 +541,110 @@ export function Record360({
             ))}
           </div>
           <RelatedRecords records={finance} go={go} />
-          <h3>Calculation rules</h3>
-          <select
-            value={rule}
-            onChange={(e) => {
-              setRule(e.target.value);
-              setInputs({});
-              setResult(null);
-            }}
-          >
-            {data.rules.map((d: any) => (
-              <option value={d.id} key={d.id}>
-                {d.label} · v{d.version}
-              </option>
-            ))}
-          </select>
-          <p>{definition.description}</p>
-          {data.canManage && (
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const answer = await mutate('calculate', {
-                  recordId: id,
-                  rule,
-                  inputs,
-                });
-                if (answer) setResult(answer.result);
+          <details>
+            <summary>Calculation rules & history</summary>
+            <h3>Calculation rules</h3>
+            <select
+              value={rule}
+              onChange={(e) => {
+                setRule(e.target.value);
+                setInputs({});
+                setResult(null);
               }}
             >
-              <div className="r360-fields">
-                {definition.inputs.map((k: string) => (
-                  <label key={k}>
-                    {label(k)}
-                    {k === 'interstate' ? (
-                      <select
-                        value={String(inputs[k] ?? '')}
-                        onChange={(e) =>
-                          setInputs({
-                            ...inputs,
-                            [k]: e.target.value === 'true',
-                          })
-                        }
-                        required
-                      >
-                        <option value="">Choose</option>
-                        <option value="true">Interstate</option>
-                        <option value="false">Intrastate</option>
-                      </select>
-                    ) : (
-                      <Input
-                        type="number"
-                        step="any"
-                        required
-                        value={inputs[k] ?? ''}
-                        onChange={(e) =>
-                          setInputs({ ...inputs, [k]: e.target.value })
-                        }
-                      />
-                    )}
-                  </label>
-                ))}
-              </div>
-              <Button disabled={busy}>Calculate and save audit</Button>
-            </form>
-          )}
-          {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
-          <h3>Saved calculations</h3>
-          {data.calculations.map((c: any) => (
-            <details key={c.id}>
-              <summary>
-                {c.rule_id} v{c.rule_version} · {c.created}
-              </summary>
-              <pre>{JSON.stringify(JSON.parse(c.data), null, 2)}</pre>
-            </details>
-          ))}
+              {data.rules.map((d: any) => (
+                <option value={d.id} key={d.id}>
+                  {d.label} · v{d.version}
+                </option>
+              ))}
+            </select>
+            <p>{definition.description}</p>
+            {data.canManage && (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const answer = await mutate('calculate', {
+                    recordId: id,
+                    rule,
+                    inputs,
+                  });
+                  if (answer) setResult(answer.result);
+                }}
+              >
+                <div className="r360-fields">
+                  {definition.inputs.map((k: string) => (
+                    <label key={k}>
+                      {label(k)}
+                      {k === 'interstate' ? (
+                        <select
+                          value={String(inputs[k] ?? '')}
+                          onChange={(e) =>
+                            setInputs({
+                              ...inputs,
+                              [k]: e.target.value === 'true',
+                            })
+                          }
+                          required
+                        >
+                          <option value="">Choose</option>
+                          <option value="true">Interstate</option>
+                          <option value="false">Intrastate</option>
+                        </select>
+                      ) : (
+                        <Input
+                          type="number"
+                          step="any"
+                          required
+                          value={inputs[k] ?? ''}
+                          onChange={(e) =>
+                            setInputs({ ...inputs, [k]: e.target.value })
+                          }
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
+                <Button disabled={busy}>Calculate and save audit</Button>
+              </form>
+            )}
+            {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+            <h3>Saved calculations</h3>
+            {data.calculations.map((c: any) => (
+              <details key={c.id}>
+                <summary>
+                  {c.rule_id} v{c.rule_version} · {c.created}
+                </summary>
+                <pre>{JSON.stringify(JSON.parse(c.data), null, 2)}</pre>
+              </details>
+            ))}
+          </details>
         </section>
       )}
       {tab === 'Documents' && (
         <section className="widget">
-          <h3>Document control</h3>
-          <div className="r360-records">
-            {[
-              'invoices',
-              'packing-lists',
-              'shipping-bills',
-              'bills-of-lading',
-              'export-documents',
-              'receipts',
-              'ebrc',
-            ].map((kind) => {
-              const docs = data.records.filter((n: any) => n.kind === kind);
-              return (
-                <div key={kind}>
-                  <strong>{entityType(kind)}</strong>
-                  <span>{docs.length ? 'Recorded' : 'No linked record'}</span>
-                  <RelatedRecords records={docs} go={go} />
-                </div>
-              );
-            })}
-          </div>
+          <details>
+            <summary>Export document checklist</summary>
+            <div className="r360-records">
+              {[
+                'invoices',
+                'packing-lists',
+                'shipping-bills',
+                'bills-of-lading',
+                'export-documents',
+                'receipts',
+                'ebrc',
+              ].map((kind) => {
+                const docs = data.records.filter((n: any) => n.kind === kind);
+                return (
+                  <div key={kind}>
+                    <strong>{entityType(kind)}</strong>
+                    <span>{docs.length ? 'Recorded' : 'No linked record'}</span>
+                    <RelatedRecords records={docs} go={go} />
+                  </div>
+                );
+              })}
+            </div>
+          </details>
           <h3>Attachments</h3>
           <RelatedRecords records={subset(['documents'])} go={go} />
           {subset(['op-document']).map((d: any) => (

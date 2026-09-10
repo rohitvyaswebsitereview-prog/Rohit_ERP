@@ -1,6 +1,16 @@
 'use client';
 import { Record360, ControlTower, DataDictionary } from './record-360';
 import Masters from './masters';
+import {
+  workspaceNavigation,
+  canOpenWorkspace,
+} from '@/lib/workspace-navigation';
+import {
+  SimpleDashboard,
+  SimpleBalances,
+  SimpleDocumentDrive,
+  WorkspaceCatalog,
+} from './simple-workspace';
 import Operations from './operations';
 import WorkbookData, { WorkbookOverview } from './workbook-data';
 import SalesDocuments from './sales-documents';
@@ -122,35 +132,10 @@ function AppSidebar({
 }) {
   const { state, setOpenMobile } = useSidebar(),
     [expanded, setExpanded] = useState('');
-  const visible = (m: (typeof modules)[number]) =>
-    role === 'Admin' ||
-    (role === 'Viewer' && m.key !== 'administration') ||
-    (role === 'Logistics'
-      ? [
-          'dashboard',
-          'sales',
-          'inventory',
-          'logistics',
-          'compliance',
-          'documents',
-          'tasks',
-          'masters',
-          'settings',
-          'help',
-        ].includes(m.key)
-      : [
-          'dashboard',
-          'sales',
-          'purchase',
-          'finance',
-          'compliance',
-          'documents',
-          'costing',
-          'reports',
-          'masters',
-          'settings',
-          'help',
-        ].includes(m.key));
+  const visible = (m: (typeof workspaceNavigation)[number]) =>
+    m.items.length
+      ? m.items.some(([, r]) => canOpenWorkspace(r, role))
+      : canOpenWorkspace(m.key, role);
   const nav = (r: string) => {
     go(r);
     setOpenMobile(false);
@@ -159,12 +144,11 @@ function AppSidebar({
     const m = {
       ...original,
       items: original.items.filter(([, r]) => {
-        const target = opMap[operationRoutes[r] || r];
-        return !target || permittedOperation(target, role);
+        return canOpenWorkspace(r, role);
       }),
     };
     const Icon = m.icon;
-    const owner = modules.find((module) =>
+    const owner = workspaceNavigation.find((module) =>
       module.items.some((i) => i[1] === route),
     );
     const active =
@@ -261,15 +245,17 @@ function AppSidebar({
             <strong>Rohit's ERP</strong>
           </div>
         </div>
-        <SidebarMenu>{item(modules[0])}</SidebarMenu>
+        <SidebarMenu>{item(workspaceNavigation[0])}</SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu>
-          {modules.slice(1, 13).filter(visible).map(item)}
+          {workspaceNavigation.slice(1, 9).filter(visible).map(item)}
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
-        <SidebarMenu>{modules.slice(13).filter(visible).map(item)}</SidebarMenu>
+        <SidebarMenu>
+          {workspaceNavigation.slice(9).filter(visible).map(item)}
+        </SidebarMenu>
         <div className="sidebar-local">
           <i /> Local workspace
         </div>
@@ -527,7 +513,16 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
         <header className="top-header">
           <div className="header-left">
             <SidebarTrigger className="icon-btn" />
-            <strong>{titles[route] || 'Workspace'}</strong>
+            <strong>
+              {{
+                'all-tools': 'All tools',
+                'workspace-settings': 'Settings',
+                receivables: 'Customer balances',
+                payables: 'Supplier balances',
+              }[route] ||
+                titles[route] ||
+                'Workspace'}
+            </strong>
           </div>
           <button className="global-search" onClick={() => setSearchOpen(true)}>
             <Search size={17} />
@@ -622,7 +617,7 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
           </div>
         </header>
         <main className="page-content">
-          {route !== 'masters' && (
+          {!['masters', 'record360'].includes(route) && (
             <div className="page-heading">
               <div>
                 <div className="breadcrumb">
@@ -641,14 +636,16 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
                 </div>
                 <h1>
                   {route === 'dashboard'
-                    ? 'Business at a glance'
-                    : titles[route] || 'Workspace'}
+                    ? 'Dashboard'
+                    : {
+                        'all-tools': 'All tools',
+                        'workspace-settings': 'Settings',
+                        receivables: 'Customer balances',
+                        payables: 'Supplier balances',
+                      }[route] ||
+                      titles[route] ||
+                      'Workspace'}
                 </h1>
-                <p>
-                  {route === 'dashboard'
-                    ? 'Performance, priorities and progress. All in one view.'
-                    : pageSubtitle(route)}
-                </p>
               </div>
               {route === 'dashboard' && (
                 <div className="dashboard-controls">
@@ -691,31 +688,17 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
           )}
           {route === 'dashboard' ? (
             validRange ? (
-              <>
-                {['Admin', 'Finance'].includes(user.role) && (
-                  <>
-                    <ControlTower go={go} fy={fy} compact />
-                    <WorkbookOverview go={go} fy={fy} />
-                  </>
-                )}
-                <OperationalOverview revision={revision} go={go} />
-                <Dashboard
-                  fy={fy}
-                  start={start}
-                  end={end}
-                  revision={revision}
-                  go={(r, f) =>
-                    go(r, f, {
-                      from: ['sales-report', 'profitability'].includes(r)
-                        ? start
-                        : '',
-                      to: end,
-                    })
-                  }
-                  records={records}
-                  role={user.role}
-                />
-              </>
+              <SimpleDashboard
+                records={records}
+                fy={fy}
+                go={go}
+                role={user.role}
+                loading={loading}
+                error={error}
+                retry={refresh}
+                start={start}
+                end={end}
+              />
             ) : (
               <div className="error-box">
                 This period falls outside FY {fy}. Select a different period or
@@ -906,6 +889,37 @@ function PageContent({
         {error}
       </div>
     );
+  if (['reports', 'workspace-settings', 'all-tools'].includes(route))
+    return (
+      <WorkspaceCatalog
+        key={route}
+        mode={
+          route === 'reports'
+            ? 'reports'
+            : route === 'workspace-settings'
+              ? 'settings'
+              : 'all'
+        }
+        role={user.role}
+        go={go}
+      />
+    );
+  if (['receivables', 'payables'].includes(route))
+    return (
+      <SimpleBalances
+        key={
+          route +
+          fy +
+          (typeof window !== 'undefined' ? window.location.search : '')
+        }
+        records={records}
+        fy={fy}
+        go={go}
+        direction={route === 'receivables' ? 'Receivable' : 'Payable'}
+      />
+    );
+  if (route === 'documents-drive')
+    return <SimpleDocumentDrive records={records} fy={fy} go={go} />;
   if (route === 'record360')
     return (
       <Record360
