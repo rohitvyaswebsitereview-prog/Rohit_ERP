@@ -3,6 +3,15 @@ import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { api, money, Loading, Status } from './erp-ui';
+import { LifecycleRail, FinanceOverview } from './process-workspace';
+import { mainRecordSections } from '@/lib/workspace-navigation';
+import { sourceState } from '@/lib/workflow';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from './ui/dropdown-menu';
 import { RecordSummary } from './record-summary';
 import { WorkbookRecord } from './workbook-data';
 import { entityLabel, entityType } from '@/lib/relationships';
@@ -13,6 +22,8 @@ const label = (s: string) =>
     .replace(/^./, (x) => x.toUpperCase());
 const tabs = [
   'Overview',
+  'Items',
+  'Reconciliation',
   'Transactions',
   'Finance',
   'Logistics',
@@ -33,30 +44,56 @@ export function RelatedRecords({
   records: any[];
   go: (r: string) => void;
 }) {
-  return records.length ? (
-    <div className="r360-records">
-      {records.map((r) => (
+  const [q, setQ] = useState(''),
+    [page, setPage] = useState(0);
+  const rows = records.filter((r) =>
+    (entityLabel(r) + ' ' + entityType(r.kind) + ' ' + (r.serialNumber || ''))
+      .toLowerCase()
+      .includes(q.toLowerCase()),
+  );
+  useEffect(() => setPage(0), [q, records.length]);
+  return (
+    <div className="related-register">
+      {records.length > 8 && (
+        <Input
+          aria-label="Find related record"
+          placeholder="Find related record…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      )}{' '}
+      {rows.slice(page * 15, page * 15 + 15).map((r) => (
         <button
+          className="related-line"
           key={r.id}
-          onClick={() => go('record360?record=' + encodeURIComponent(r.id))}
+          onClick={() => go('transactions?record=' + encodeURIComponent(r.id))}
         >
           <span>{entityType(r.kind)}</span>
           <strong>{reference(r)}</strong>
-          <small>
-            {r.party || r.serialNumber || r.date || 'Date not supplied'}
-          </small>
-          <span>
-            {r.status || 'Recorded'}
-            {r.amount !== undefined
-              ? ' · ' + money(r.amount, r.currency || 'INR')
-              : ''}{' '}
-            ↗
-          </span>
+          <span>{r.date || r.serialNumber || ''}</span>
         </button>
       ))}
+      {!rows.length && <p className="muted">No matching linked records.</p>}
+      {rows.length > 15 && (
+        <div className="simple-panel-foot">
+          <span>{rows.length} records</span>
+          <Button
+            variant="ghost"
+            disabled={!page}
+            onClick={() => setPage(page - 1)}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={(page + 1) * 15 >= rows.length}
+            onClick={() => setPage(page + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
     </div>
-  ) : (
-    <p className="muted">No confirmed linked records.</p>
   );
 }
 export function Record360({
@@ -198,7 +235,15 @@ export function Record360({
       v !== undefined &&
       typeof v !== 'object',
   );
-  const next = pending[0];
+  const next = data.lifecycle ? data.lifecycle.next : pending[0];
+  const assignStage = (stage: any) => {
+    setTab('Tasks');
+    setTask({
+      name: stage.action || stage.nextAction,
+      owner: stage.owner,
+      dueDate: stage.dueDate || '',
+    });
+  };
   return (
     <div className="r360 record-workspace">
       <header className="widget r360-header">
@@ -208,12 +253,12 @@ export function Record360({
           </Button>
           <span>{entityType(r.kind)}</span>
           <div className="inline-actions">
-            {onManage && (
+            {data.canManage && onManage && (
               <Button variant="outline" onClick={onManage}>
                 Edit / actions
               </Button>
             )}
-            {!onManage && !r.importLocked && (
+            {data.canManage && !onManage && !r.importLocked && (
               <Button
                 variant="outline"
                 onClick={() =>
@@ -225,6 +270,34 @@ export function Record360({
                 Edit / actions
               </Button>
             )}
+            <Button variant="outline" onClick={() => setTab('Documents')}>
+              Create document
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="outline" />}>
+                More
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {[
+                  ['Tasks', 'Tasks'],
+                  ['Communication', 'Communication'],
+                  ['360°', 'Connections'],
+                  ['Audit', 'Audit'],
+                  ['Source & Migration', 'Source & migration'],
+                  ['Procurement', 'Procurement'],
+                  ['Logistics', 'Logistics'],
+                ]
+                  .filter(
+                    ([key]) =>
+                      key !== 'Source & Migration' || data.sourceAvailable,
+                  )
+                  .map(([key, title]) => (
+                    <DropdownMenuItem key={key} onClick={() => setTab(key)}>
+                      {title}
+                    </DropdownMenuItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button variant="outline" onClick={() => window.print()}>
               Print view
             </Button>
@@ -233,14 +306,17 @@ export function Record360({
         <h2>{reference(r)}</h2>
         <p>{r.party || r.name || r.serialNumber || ''}</p>
         <div className="r360-top">
-          <Status
-            value={
-              r.status === 'Imported'
-                ? 'Historical record'
-                : r.status || 'Recorded'
-            }
-          />
+          <Status value={data.lifecycle?.status || r.status || 'Recorded'} />
           <span>{r.date || 'Date not supplied'}</span>
+          <span className="record-source-state">{sourceState(r)}</span>
+          {r.totalUsd && (
+            <strong>
+              {money(Math.round(Number(r.totalUsd) * 100), 'USD')}
+            </strong>
+          )}
+          {r.amount !== undefined && (
+            <span>{money(r.amount, r.currency || 'INR')}</span>
+          )}
           <Button variant="outline" onClick={() => setTab('Documents')}>
             Documents
           </Button>
@@ -254,36 +330,29 @@ export function Record360({
           {error}
         </p>
       )}
-      {data.pending.length > 0 && (
-        <details className="simple-progress">
-          <summary>
-            Shipment progress ·{' '}
-            {data.pending.filter((p: any) => p.complete).length} of{' '}
-            {data.pending.length} checks recorded
-          </summary>
-          <div className="r360-lifecycle" aria-label="Lifecycle evidence">
-            {data.pending.map((p: any) => (
-              <button
-                key={p.key}
-                onClick={() => {
-                  setTab('Tasks');
-                  setTask({ name: p.action, owner: p.owner });
-                }}
-                className={p.complete ? 'complete' : 'pending'}
-              >
-                {p.complete ? '✓' : '○'} {p.label}
-              </button>
-            ))}
+      {next && (
+        <section className="record-next-action">
+          <div>
+            <span>Next action</span>
+            <strong>{next.action}</strong>
+            <small>
+              Owner: {next.owner} · Due: {next.dueDate || 'Not assigned'}
+            </small>
           </div>
-        </details>
+          {data.canManage && (
+            <Button onClick={() => assignStage(next)}>Assign task</Button>
+          )}
+        </section>
       )}
-      <nav className="r360-tabs" aria-label="Record sections">
-        {[
-          ['Overview', 'Details'],
-          ['Documents', 'Documents'],
-          ['Finance', 'Payments'],
-          ['Timeline', 'Activity'],
-        ].map(([key, title]) => (
+      <LifecycleRail
+        flow={data.lifecycle}
+        records={data.records}
+        go={go}
+        onAssign={assignStage}
+        canAssign={data.canManage}
+      />
+      <nav className="r360-tabs" aria-label="Record information">
+        {mainRecordSections.map(([key, title]) => (
           <button
             key={key}
             aria-current={tab === key ? 'page' : undefined}
@@ -292,34 +361,17 @@ export function Record360({
             {title}
           </button>
         ))}
-        <label className="simple-more">
-          More{' '}
-          <select
-            aria-label="More record sections"
-            value={
-              ['Overview', 'Documents', 'Finance', 'Timeline'].includes(tab)
-                ? ''
-                : tab
-            }
-            onChange={(e) => e.target.value && setTab(e.target.value)}
-          >
-            <option value="">Choose section</option>
-            {tabs
-              .filter(
-                (t) =>
-                  !['Overview', 'Documents', 'Finance', 'Timeline'].includes(
-                    t,
-                  ) &&
-                  (t !== 'Source & Migration' || data.sourceAvailable),
-              )
-              .map((t) => (
-                <option key={t} value={t}>
-                  {t === '360°' ? 'Connections' : t}
-                </option>
-              ))}
-          </select>
-        </label>
       </nav>
+      {tab === 'Items' && (
+        <RecordSummary data={data} go={go} section={setTab} items />
+      )}
+      {tab === 'Finance' && (
+        <FinanceOverview
+          data={data}
+          go={go}
+          onDetails={() => setTab('Reconciliation')}
+        />
+      )}
       {tab === 'Overview' && (
         <RecordSummary data={data} go={go} section={setTab} />
       )}
@@ -368,7 +420,7 @@ export function Record360({
           />
         </section>
       )}
-      {tab === 'Finance' && (
+      {tab === 'Reconciliation' && (
         <section className="widget">
           <h3>Financial reconciliation</h3>
           <p>{data.financial.note}</p>

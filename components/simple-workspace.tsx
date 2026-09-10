@@ -1,4 +1,5 @@
 'use client';
+import { useDataView } from './data-view';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Search,
@@ -385,6 +386,7 @@ export function SimpleBalances({
   go: any;
   direction: 'Receivable' | 'Payable';
 }) {
+  const { includes: includeData, view: dataView } = useDataView();
   const params = new URLSearchParams(
     typeof window === 'undefined' ? '' : window.location.search,
   );
@@ -394,14 +396,14 @@ export function SimpleBalances({
     [page, setPage] = useState(0);
   const data = useMemo(
     () =>
-      financial360(records, fy).lines.filter(
+      financial360(records.filter(includeData), fy).lines.filter(
         (r) =>
           r.type === direction &&
           r.fy === fy &&
           (!params.get('from') || !r.date || r.date >= params.get('from')!) &&
           (!params.get('to') || !r.date || r.date <= params.get('to')!),
       ),
-    [records, fy, direction, params.get('from'), params.get('to')],
+    [records, fy, direction, dataView, params.get('from'), params.get('to')],
   );
   const currencies = [...new Set<string>(data.map((r) => r.currency))];
   const current = currencies.includes(currency)

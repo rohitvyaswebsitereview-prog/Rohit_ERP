@@ -1,377 +1,305 @@
 'use client';
-import {
-  Building2,
-  Package,
-  ArrowUpRight,
-  CalendarDays,
-  FileText,
-} from 'lucide-react';
 import { Button } from './ui/button';
 import { money, dateLabel } from './erp-ui';
 import { entityLabel, entityType } from '@/lib/relationships';
-
-const named = (key: string) =>
-  key
+import { transactionLink } from './process-workspace';
+import { useDataView } from './data-view';
+const named = (s: string) =>
+  s
     .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/_/g, ' ')
+    .replaceAll('_', ' ')
     .replace(/^./, (c) => c.toUpperCase());
 export function RecordSummary({
   data,
   go,
   section,
+  items = false,
 }: {
   data: any;
-  go: (route: string) => void;
-  section: (tab: string) => void;
+  go: any;
+  section: any;
+  items?: boolean;
 }) {
+  const { includes } = useDataView();
   const r = data.record,
-    records = data.records || [];
-  const party = records.find((x: any) => x.id === r.partnerId);
-  const linked = records.filter(
+    nodes = data.records || [],
+    party = nodes.find((x: any) => x.id === r.partnerId),
+    position = (data.financial?.lines || []).find((x: any) => x.id === r.id);
+  const currency = position?.currency || r.currency || 'INR',
+    amount = position?.amount ?? r.amount;
+  const related = nodes.filter((x: any) => x.id !== r.id),
+    units = related.filter((x: any) => x.kind === 'machines'),
+    sales = related.filter((x: any) =>
+      ['invoices', 'domestic-invoices'].includes(x.kind),
+    );
+  const transactions = (data.transactions || []).filter(
     (x: any) =>
-      x.id !== r.id &&
-      !['op-document', 'documents', 'workbook-fact'].includes(x.kind),
+      includes(x) && !['Cancelled', 'Closed', 'Completed'].includes(x.status),
   );
-  const position = (data.financial?.lines || []).find(
-    (x: any) => x.id === r.id,
-  );
-  const currency = position?.currency || r.currency || 'INR';
-  const amount = position?.amount ?? r.amount;
-  const coreKeys = [
-    'reference',
-    'originalReference',
-    'name',
-    'customerName',
-    'supplierName',
-    'party',
-    'date',
-    'currency',
-    'amount',
-    'status',
-    'sourceStatus',
-    'fy',
-    'totalUsd',
-  ];
-  const ignored = new Set([
+  const profile =
+    ['customers', 'vendors', 'products', 'warehouses'].includes(r.kind) ||
+    r.kind.startsWith('master-');
+  const excluded = new Set([
     'id',
     'kind',
-    'operation',
     'version',
-    'created',
-    'updated',
+    'operation',
     'importLocked',
     'importBatch',
     'sourceAmountExact',
-    'sourceRow',
     'sourceId',
     'partnerId',
-    'relatedIds',
-    'lines',
-    'totals',
-    'sourceFacts',
-    'sourceWorkbook',
+    'dataState',
     'amountDerived',
-    'sourceInvoiceValue',
+    'created',
+    'updated',
+    'reference',
+    'originalReference',
+    'amount',
+    'currency',
+    'status',
+    'totalUsd',
+    'fy',
+    'date',
+    'notes',
   ]);
-  const fields = Object.entries(r).filter(
+  const details = Object.entries(r).filter(
     ([k, v]) =>
-      !ignored.has(k) &&
-      !coreKeys.includes(k) &&
+      !excluded.has(k) &&
       !k.startsWith('source') &&
-      !k.startsWith('import') &&
       !k.endsWith('Id') &&
-      v !== '' &&
       v !== null &&
       v !== undefined &&
+      v !== '' &&
       typeof v !== 'object',
   );
-  const groups = [
-    {
-      title: 'Contact & address',
-      keys: [
-        'email',
-        'phone',
-        'mobile',
-        'contactName',
-        'address',
-        'billingAddress',
-        'shippingAddress',
-        'city',
-        'state',
-        'country',
-        'postalCode',
-        'gstin',
-        'pan',
-      ],
-    },
-    {
-      title: 'Trade & delivery',
-      keys: [
-        'quotationType',
-        'subject',
-        'incoterm',
-        'incoterms',
-        'paymentTerms',
-        'deliveryDate',
-        'dueDate',
-        'portOfLoading',
-        'portOfDischarge',
-        'destination',
-        'consignee',
-        'notifyParty',
-        'shippingMethod',
-      ],
-    },
-    {
-      title: 'Equipment',
-      keys: [
-        'serialNumber',
-        'brand',
-        'model',
-        'hsn',
-        'uom',
-        'location',
-        'condition',
-        'year',
-        'quantity',
-        'weight',
-      ],
-    },
-  ];
-  const grouped = new Set(groups.flatMap((g) => g.keys));
-  const extra = fields.filter(([k]) => !grouped.has(k));
-  const next = (data.pending || []).find((x: any) => !x.complete);
-  const details = (entries: any[]) => (
-    <dl className="record-facts">
-      {entries.map(([k, v]) => (
-        <div key={k}>
-          <dt>{named(k)}</dt>
-          <dd>{String(v)}</dd>
-        </div>
-      ))}
+  const facts = (rows: any[]) => (
+    <dl className="key-information">
+      {rows
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([k, v]) => (
+          <div key={k}>
+            <dt>{named(k)}</dt>
+            <dd>{String(v)}</dd>
+          </div>
+        ))}
     </dl>
   );
-  return (
-    <div className="record-summary">
-      <section className="record-party-strip">
-        <div className="record-party-icon">
-          <Building2 size={23} />
-        </div>
-        <div>
-          <span>
-            {party
-              ? entityType(party.kind)
-              : r.customerName
-                ? 'Customer'
-                : 'Record'}
-          </span>
-          <h3>
-            {party?.name ||
-              r.customerName ||
-              r.supplierName ||
-              r.party ||
-              r.name ||
-              entityType(r.kind)}
-          </h3>
-        </div>
-        {party && (
-          <Button
-            variant="ghost"
-            onClick={() =>
-              go('record360?record=' + encodeURIComponent(party.id))
-            }
-          >
-            View profile <ArrowUpRight size={16} />
-          </Button>
-        )}
-        <div className="record-date">
-          <CalendarDays size={17} />
-          <span>
-            {dateLabel(r.date)}
-            <small>Financial year {r.fy || '—'}</small>
-          </span>
-        </div>
-      </section>
-      {amount !== undefined && (
-        <div className="record-money-strip">
-          <div>
-            <span>
-              {position ? 'Invoice value' : 'Recorded value'} · {currency}
-            </span>
-            <strong>{money(Number(amount), currency)}</strong>
-          </div>
-          {position && (
-            <>
-              <div>
-                <span>Settled · {currency}</span>
-                <strong>{money(position.settled, currency)}</strong>
-              </div>
-              <div className="record-balance">
-                <span>Balance · {currency}</span>
-                <strong>{money(position.balance, currency)}</strong>
-                <button onClick={() => section('Finance')}>
-                  View payments <ArrowUpRight size={14} />
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-      <div className="record-body-grid">
-        <div className="record-primary">
-          <section className="record-card">
-            <header>
-              <Package size={19} />
-              <h3>{r.lines?.length ? 'Items' : 'Record details'}</h3>
-              <span>
-                {r.lines?.length
-                  ? `${r.lines.length} line${r.lines.length === 1 ? '' : 's'}`
-                  : ''}
-              </span>
-            </header>
-            {r.lines?.length ? (
-              <div className="record-line-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Item / description</th>
-                      <th>Qty</th>
-                      <th>Basic · {r.currency || 'INR'}</th>
-                      <th>Tax · {r.currency || 'INR'}</th>
-                      <th>Total · {r.currency || 'INR'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {r.lines.map((l: any, i: number) => (
-                      <tr key={i}>
-                        <td>
-                          <strong>
-                            {l.description ||
-                              l.productName ||
-                              records.find((x: any) => x.id === l.productId)
-                                ?.name ||
-                              `Item ${i + 1}`}
-                          </strong>
-                          {(l.serialNumber || l.serialNumbers) && (
-                            <small>
-                              Serial: {l.serialNumber || l.serialNumbers}
-                            </small>
-                          )}
-                        </td>
-                        <td>
-                          {l.quantity ?? '—'} {l.uom || ''}
-                        </td>
-                        <td>
-                          {l.basic !== undefined
-                            ? money(Number(l.basic), r.currency || 'INR')
-                            : '—'}
-                        </td>
-                        <td>
-                          {l.gst !== undefined
-                            ? money(Number(l.gst), r.currency || 'INR')
-                            : '—'}
-                        </td>
-                        <td>
-                          {l.total !== undefined
-                            ? money(Number(l.total), r.currency || 'INR')
-                            : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="record-card-content">
-                {details([
-                  ['reference', entityLabel(r)],
-                  ['status', r.sourceStatus || r.status || 'Recorded'],
-                  ...fields.slice(0, 6),
-                ])}
-              </div>
-            )}
-          </section>
-          {groups.map((g) => {
-            const entries = fields.filter(([k]) => g.keys.includes(k));
-            return entries.length ? (
-              <section className="record-card" key={g.title}>
-                <header>
-                  <h3>{g.title}</h3>
-                </header>
-                <div className="record-card-content">{details(entries)}</div>
-              </section>
-            ) : null;
-          })}
-          {!!extra.length && (
-            <details className="record-card record-additional">
-              <summary>
-                Additional information <span>{extra.length} fields</span>
-              </summary>
-              <div className="record-card-content">{details(extra)}</div>
-            </details>
-          )}
-        </div>
-        <aside className="record-side">
-          <section className="record-card">
-            <header>
-              <h3>Current progress</h3>
-            </header>
-            <div className="record-card-content">
-              <p className="record-current-status">
-                {r.sourceStatus || r.status || 'Recorded'}
-              </p>
-              {next ? (
-                <>
-                  <p>{next.action}</p>
-                  <Button variant="outline" onClick={() => section('Tasks')}>
-                    Review next action <ArrowUpRight size={15} />
-                  </Button>
-                </>
-              ) : (
-                <Button variant="outline" onClick={() => section('Timeline')}>
-                  View activity
-                </Button>
-              )}
-            </div>
-          </section>
-          <section className="record-card">
-            <header>
-              <FileText size={18} />
-              <h3>Related records</h3>
-              <span>{linked.length}</span>
-            </header>
-            <div className="record-linked-list">
-              {linked.slice(0, 5).map((x: any) => (
-                <button
-                  key={x.id}
-                  onClick={() =>
-                    go('record360?record=' + encodeURIComponent(x.id))
-                  }
-                >
-                  <span>
-                    <small>{entityType(x.kind)}</small>
-                    <strong>{entityLabel(x)}</strong>
-                  </span>
-                  <ArrowUpRight size={15} />
-                </button>
+  if (items)
+    return (
+      <section className="record-items">
+        <h3>Items & serialized units</h3>
+        <div className="simple-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Item / description</th>
+                <th>Serial number</th>
+                <th>Qty</th>
+                <th>Basic · {r.currency || 'INR'}</th>
+                <th>GST · {r.currency || 'INR'}</th>
+                <th>Total · {r.currency || 'INR'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(r.lines || []).map((l: any, i: number) => (
+                <tr key={i}>
+                  <td>{l.description || l.productName || '—'}</td>
+                  <td>{l.serialNumber || l.serialNumbers || '—'}</td>
+                  <td>
+                    {l.quantity ?? '—'} {l.uom || ''}
+                  </td>
+                  <td>
+                    {l.basic !== undefined
+                      ? money(Number(l.basic), r.currency || 'INR')
+                      : '—'}
+                  </td>
+                  <td>
+                    {l.gst !== undefined
+                      ? money(Number(l.gst), r.currency || 'INR')
+                      : '—'}
+                  </td>
+                  <td>
+                    {l.total !== undefined
+                      ? money(Number(l.total), r.currency || 'INR')
+                      : '—'}
+                  </td>
+                </tr>
               ))}
-              {!linked.length && <p>No linked transactions recorded.</p>}
-              {linked.length > 5 && (
-                <Button variant="ghost" onClick={() => section('Transactions')}>
-                  View all {linked.length}
-                </Button>
-              )}
+            </tbody>
+          </table>
+        </div>
+        {!(r.lines || []).length && <p>No item lines recorded.</p>}
+        {units.map((u: any) => (
+          <button
+            className="related-line"
+            key={u.id}
+            onClick={() => go(transactionLink(u.id))}
+          >
+            {u.serialNumber || entityLabel(u)} <span>{u.status}</span>
+          </button>
+        ))}
+      </section>
+    );
+  return (
+    <div className="decision-overview">
+      <section className="decision-finance">
+        <h3>{profile ? 'Open items' : 'Financial position'}</h3>
+        {position ? (
+          <div className="decision-values">
+            <div>
+              <span>Invoice value · {currency}</span>
+              <strong>{money(amount, currency)}</strong>
             </div>
-          </section>
-          {r.importLocked && (
-            <p className="record-history-note">
-              Historical record. Original figures are preserved.{' '}
-              <button onClick={() => section('Source & Migration')}>
-                View source
-              </button>
-            </p>
+            <div>
+              <span>Settled · {currency}</span>
+              <strong>{money(position.settled, currency)}</strong>
+            </div>
+            <div>
+              <span>Receivable / payable · {currency}</span>
+              <strong>{money(position.balance, currency)}</strong>
+            </div>
+          </div>
+        ) : amount !== undefined ? (
+          <strong>{money(Number(amount), currency)}</strong>
+        ) : (
+          <div className="decision-values">
+            {(data.financial?.summary || []).slice(0, 4).map((x: any) => (
+              <div key={x.label}>
+                <span>{x.label}</span>
+                <strong>{money(x.balance, x.currency)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+        <button className="text-link" onClick={() => section('Finance')}>
+          Open finance →
+        </button>
+      </section>
+      <section>
+        <h3>{profile ? 'Profile' : 'Key information'}</h3>
+        {facts([
+          [
+            'customer / supplier',
+            party?.name || r.customerName || r.supplierName || r.party,
+          ],
+          ['reference', entityLabel(r)],
+          ['date', dateLabel(r.date)],
+          [
+            'current status',
+            r.sourceStatus || data.lifecycle?.status || r.status,
+          ],
+          [
+            'shipment',
+            related.find((x: any) =>
+              ['shipments', 'bills-of-lading'].includes(x.kind),
+            )?.reference,
+          ],
+          [
+            'equipment',
+            units.length
+              ? `${units.length} serialized units`
+              : r.lines?.length
+                ? `${r.lines.length} item lines`
+                : undefined,
+          ],
+          ['serial number', r.serialNumber],
+          [
+            'sale',
+            r.kind === 'machines'
+              ? sales.map((x: any) => entityLabel(x)).join(', ')
+              : undefined,
+          ],
+          ...details.filter(([k]) =>
+            [
+              'email',
+              'phone',
+              'country',
+              'billingAddress',
+              'address',
+              'model',
+              'brand',
+            ].includes(k),
+          ),
+        ])}
+      </section>
+      {profile && transactions.length > 0 && (
+        <section>
+          <h3>
+            Current transactions <small>{transactions.length}</small>
+          </h3>
+          {transactions.slice(0, 5).map((t: any) => (
+            <button
+              className="related-line"
+              key={t.id}
+              onClick={() => go(transactionLink(t.id))}
+            >
+              <strong>{t.reference}</strong>
+              <span>{t.party}</span>
+              <span>{t.stage}</span>
+            </button>
+          ))}
+          {transactions.length > 5 && (
+            <Button variant="ghost" onClick={() => section('Transactions')}>
+              View all transactions
+            </Button>
           )}
-        </aside>
+        </section>
+      )}
+      {['products', 'machines'].includes(r.kind) && (
+        <section>
+          <h3>
+            {r.kind === 'products'
+              ? 'Serialized units'
+              : 'Product / equipment model'}
+          </h3>
+          {r.kind === 'products'
+            ? units.map((u: any) => (
+                <button
+                  className="related-line"
+                  key={u.id}
+                  onClick={() => go(transactionLink(u.id))}
+                >
+                  <span>{u.serialNumber || entityLabel(u)}</span>
+                  <span>{u.status}</span>
+                </button>
+              ))
+            : related
+                .filter((x: any) => x.kind === 'products')
+                .map((p: any) => (
+                  <button
+                    className="related-line"
+                    key={p.id}
+                    onClick={() => go(transactionLink(p.id))}
+                  >
+                    {entityLabel(p)}
+                  </button>
+                ))}
+          {r.kind === 'products' && !units.length && (
+            <p>No serialized units linked.</p>
+          )}
+        </section>
+      )}
+      {!!details.length && (
+        <details className="profile-details">
+          <summary>
+            {profile
+              ? 'Contacts, addresses, terms & other profile information'
+              : 'Additional business information'}
+          </summary>
+          {facts(details)}
+        </details>
+      )}
+      <div className="overview-links">
+        <Button variant="outline" onClick={() => section('Items')}>
+          View items
+        </Button>
+        <Button variant="outline" onClick={() => section('Documents')}>
+          View documents
+        </Button>
+        <Button variant="outline" onClick={() => section('Timeline')}>
+          View history
+        </Button>
       </div>
     </div>
   );

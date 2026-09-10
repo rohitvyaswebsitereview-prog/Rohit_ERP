@@ -1,4 +1,7 @@
 'use client';
+import { ListPreferences } from './list-preferences';
+import { processState } from '@/lib/workflow';
+import { useDataView } from './data-view';
 import { Record360 } from './record-360';
 import { useEffect, useState } from 'react';
 import {
@@ -144,6 +147,7 @@ export default function Operations({
   initialId?: string;
   refreshParent: () => void;
 }) {
+  const { includes: includeData } = useDataView();
   const m = opMap[kind];
   const [data, setData] = useState<any[]>([]),
     [loading, setLoading] = useState(true),
@@ -168,7 +172,19 @@ export default function Operations({
       new URLSearchParams(window.location.search).get('actions') === '1',
     );
   }, [selected]);
+  const [createdFromHeader, setCreatedFromHeader] = useState(false);
   const canWrite = m && permittedOperation(m, user.role, true);
+  useEffect(() => {
+    if (
+      !loading &&
+      canWrite &&
+      !createdFromHeader &&
+      new URLSearchParams(window.location.search).get('create') === '1'
+    ) {
+      setCreatedFromHeader(true);
+      edit();
+    }
+  }, [loading, canWrite, createdFromHeader]);
   const reload = () => {
     setRevision((n) => n + 1);
     refreshParent();
@@ -223,11 +239,16 @@ export default function Operations({
       />
     );
   const rows = data
-    .filter((r) => r.kind === kind && (m.master || r.fy === fy))
+    .filter(
+      (r) => r.kind === kind && (m.master || r.fy === fy) && includeData(r),
+    )
     .filter(
       (r) =>
         (status === 'All' || (r.status || initialStatus(m)) === status) &&
-        JSON.stringify(r).toLowerCase().includes(query.toLowerCase()),
+        JSON.stringify(r).toLowerCase().includes(query.toLowerCase()) &&
+        (!new URLSearchParams(window.location.search).get('scheme') ||
+          r.scheme ===
+            new URLSearchParams(window.location.search).get('scheme')),
     );
   const record = detail?.record;
   const edit = (r?: any) => {
@@ -404,7 +425,7 @@ export default function Operations({
     );
 
   return (
-    <div className="op-workspace">
+    <div className="op-workspace" data-list-key={kind}>
       {error && (
         <div className="error-box" role="alert">
           {error}
@@ -856,6 +877,23 @@ export default function Operations({
               </Button>
             )}
           </div>
+          <ListPreferences
+            kind={kind}
+            columns={[
+              m.master ? 'Name' : 'Reference',
+              ...(m.master ? [] : ['Date', 'Partner']),
+              'Status',
+              ...(m.lines || m.posting ? ['Amount'] : []),
+              'Actions',
+            ]}
+            query={query}
+            status={status}
+            onRestore={(q, s) => {
+              setQuery(q);
+              setStatus(s);
+              setPage(0);
+            }}
+          />
           <section className="widget op-register">
             {!rows.length ? (
               <Blank
@@ -911,7 +949,7 @@ export default function Operations({
                         </>
                       )}
                       <TableCell>
-                        <Status value={r.status || initialStatus(m)} />
+                        <Status value={processState(r)} />
                       </TableCell>
                       {(m.lines || m.posting) && (
                         <TableCell>

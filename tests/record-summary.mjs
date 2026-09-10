@@ -14,18 +14,21 @@ const record={id:'invoice-1',kind:'invoices',reference:'INV-01',fy:'2026–27',d
 const data={record,records:[record,{id:'customer-1',kind:'customers',name:'Example Customer'}],financial:{lines:[{id:'invoice-1',currency:'USD',amount:6500000,settled:1500000,balance:5000000}]},pending:[]};
 const html=renderToStaticMarkup(React.createElement(RecordSummary,{data,go:()=>{},section:()=>{}}));
 assert.ok(html.includes('Example Customer'));
-assert.ok(html.includes('Equipment &lt;test&gt;'));
+const itemHtml=renderToStaticMarkup(React.createElement(RecordSummary,{data,go:()=>{},section:()=>{},items:true}));
+assert.ok(itemHtml.includes('Equipment &lt;test&gt;'));
+assert.ok(!html.includes('Equipment &lt;test&gt;'));
 assert.ok(html.includes('BL awaited'));
 assert.ok(html.includes('65,000.00')||html.includes('65,000'));
 assert.ok(html.includes('50,000.00')||html.includes('50,000'));
-assert.ok(html.includes('INR'));
+assert.ok(itemHtml.includes('INR'));
+assert.ok(!itemHtml.includes('USD'));
 assert.ok(html.includes('USD'));
 assert.ok(!html.includes('internal-batch-secret'));
 assert.ok(!html.includes('Import batch'));
 const empty=renderToStaticMarkup(React.createElement(RecordSummary,{data:{record:{id:'c',kind:'customers',name:'New customer'},records:[],pending:[]},go:()=>{},section:()=>{}}));
 assert.ok(empty.includes('New customer'));
 assert.ok(!empty.includes('NaN'));
-console.log('11 record presentation checks passed.');
+console.log('13 record presentation checks passed.');
 `,
     resolveDir: process.cwd(),
     loader: 'tsx',

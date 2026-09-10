@@ -1,4 +1,7 @@
 'use client';
+import { ListPreferences } from './list-preferences';
+import { processState } from '@/lib/workflow';
+import { useDataView } from './data-view';
 import { Record360 } from './record-360';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -214,6 +217,7 @@ export default function SalesDocuments({
   initialId?: string;
   refreshParent: () => void;
 }) {
+  const { includes: includeData } = useDataView();
   const [records, setRecords] = useState<any[]>([]),
     [data, setData] = useState<any[]>([]),
     [users, setUsers] = useState<any[]>([]),
@@ -248,6 +252,18 @@ export default function SalesDocuments({
   }, [selected]);
   const canWrite = ['Admin', 'Finance'].includes(user.role),
     title = salesLabels[kind] || 'Document';
+  const [createdFromHeader, setCreatedFromHeader] = useState(false);
+  useEffect(() => {
+    if (
+      !loading &&
+      canWrite &&
+      !createdFromHeader &&
+      new URLSearchParams(window.location.search).get('create') === '1'
+    ) {
+      setCreatedFromHeader(true);
+      begin();
+    }
+  }, [loading, canWrite, createdFromHeader]);
   const draftKey = kind + '-' + (selected || 'new');
   const queue = useRef(Promise.resolve());
   const formRef = useRef<any>(draft);
@@ -525,6 +541,7 @@ export default function SalesDocuments({
   const rows = records.filter(
     (r) =>
       r.fy === fy &&
+      includeData(r) &&
       (filter === 'All' ||
         (filter === 'Expiring'
           ? r.validUntil >= today() &&
@@ -567,7 +584,7 @@ export default function SalesDocuments({
     );
 
   return (
-    <div className="sales-workspace">
+    <div className="sales-workspace" data-list-key={kind}>
       {error && (
         <div role="alert" className="error-box">
           {error}
@@ -1695,7 +1712,26 @@ export default function SalesDocuments({
               Export
             </Button>
           </div>
-          <section className="widget">
+          <ListPreferences
+            kind={kind}
+            columns={[
+              title,
+              'Customer',
+              'Date',
+              'Valid Until',
+              'Amount',
+              'Status',
+              'Owner',
+            ]}
+            query={query}
+            status={filter}
+            onRestore={(q, s) => {
+              setQuery(q);
+              setFilter(s);
+              setPage(0);
+            }}
+          />
+          <section className="widget sales-register-table">
             {rows.length ? (
               <Table>
                 <TableHeader>
@@ -1740,7 +1776,7 @@ export default function SalesDocuments({
                         {money(r.amount || 0, r.currency || 'INR')}
                       </TableCell>
                       <TableCell>
-                        <Status value={r.status || 'Draft'} />
+                        <Status value={processState(r)} />
                       </TableCell>
                       <TableCell>
                         {users.find((u) => u.id === r.salesPersonId)?.name ||

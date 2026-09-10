@@ -445,3 +445,14 @@ modules
 modules
   .find((m) => m.key === 'settings')
   ?.items.push(['', 'data-dictionary', 'Data Dictionary & Rules']);
+
+Object.assign(titles, {
+  transactions: 'Transactions',
+  'my-work': 'My work',
+  'work-calendar': 'Calendar',
+  'document-center': 'Documents',
+  'document-inbox': 'Document inbox',
+  purchase: 'Procurement',
+  reconciliation: 'Reconciliation',
+  'architecture-map': 'Architecture & lifecycle map',
+});

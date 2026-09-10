@@ -1636,6 +1636,61 @@ try {
       assert.ok(r.data.rules.every((r) => r.version === 1));
     },
   );
+  r = await call(
+    'relationships/workspace?view=Imported%20%2F%20Migration&fy=2026%E2%80%9327',
+  );
+  check(
+    'Transaction workspace exposes imported records only when selected',
+    () => {
+      assert.equal(r.status, 200);
+      assert.ok(r.data.some((t) => t.id === 'g-invoice'));
+      assert.ok(r.data.every((t) => t.dataState === 'Imported'));
+    },
+  );
+  r = await call('relationships/workspace?view=Operational');
+  check('Operational view excludes migration records', () =>
+    assert.ok(r.data.every((t) => t.dataState === 'Live')),
+  );
+  r = await call('relationships/g-invoice');
+  check('Invoice exposes five lifecycle stages and separate data state', () => {
+    assert.equal(r.data.lifecycle.stages.length, 5);
+    assert.equal(r.data.record.dataState, 'Imported');
+    assert.ok(r.data.lifecycle.next.action);
+  });
+  r = await call('relationships/search?q=g-customer');
+  check('Global search expands confirmed connected records', () =>
+    assert.ok(
+      r.data.some((n) => n.id === 'g-ebrc' && n.match === 'Connected record'),
+    ),
+  );
+  r = await call('relationships/task', {
+    recordId: 'g-invoice',
+    name: 'Review BL',
+    owner: 'Export team',
+    dueDate: '2026-09-20',
+  });
+  check('Repeated task assignment does not create duplicates', () =>
+    assert.equal(r.status, 409),
+  );
+  r = await call('relationships/workspace', undefined, l.cookie.split(';')[0]);
+  check(
+    'Logistics workspace does not expose financial amounts or closure stages',
+    () => {
+      assert.equal(r.status, 200);
+      assert.ok(
+        r.data.every(
+          (t) =>
+            t.amount === undefined &&
+            t.totalUsd === undefined &&
+            !t.stages.some((s) => ['realisation', 'closure'].includes(s.key)),
+        ),
+      );
+    },
+  );
+  r = await call('relationships/workspace', undefined, '');
+  check('Transaction workspace requires authentication', () =>
+    assert.equal(r.status, 401),
+  );
   r = await call('logout', {});
   r = await call('records');
   check('Logout revokes the session', () => assert.equal(r.status, 401));

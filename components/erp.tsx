@@ -1,6 +1,15 @@
 'use client';
 import { Record360, ControlTower, DataDictionary } from './record-360';
 import Masters from './masters';
+import DocumentCenter from './document-center';
+import { DataViewProvider, DataViewSelect, useDataView } from './data-view';
+import {
+  ProcessHub,
+  WorkDashboard,
+  transactionLink,
+  ArchitectureMap,
+} from './process-workspace';
+import { processModules } from '@/lib/workspace-navigation';
 import {
   workspaceNavigation,
   canOpenWorkspace,
@@ -133,9 +142,7 @@ function AppSidebar({
   const { state, setOpenMobile } = useSidebar(),
     [expanded, setExpanded] = useState('');
   const visible = (m: (typeof workspaceNavigation)[number]) =>
-    m.items.length
-      ? m.items.some(([, r]) => canOpenWorkspace(r, role))
-      : canOpenWorkspace(m.key, role);
+    canOpenWorkspace(m.key, role);
   const nav = (r: string) => {
     go(r);
     setOpenMobile(false);
@@ -149,7 +156,9 @@ function AppSidebar({
     };
     const Icon = m.icon;
     const owner = workspaceNavigation.find((module) =>
-      module.items.some((i) => i[1] === route),
+      processModules[module.key]?.pages.some(
+        ([r]) => r.split('?')[0] === route,
+      ),
     );
     const active =
       route === m.key ||
@@ -318,14 +327,16 @@ export default function ERP() {
   return (
     <>
       {user ? (
-        <Workspace
-          user={user}
-          onLogout={() => {
-            setUser(null);
-            setSetup(false);
-            setExpired('');
-          }}
-        />
+        <DataViewProvider>
+          <Workspace
+            user={user}
+            onLogout={() => {
+              setUser(null);
+              setSetup(false);
+              setExpired('');
+            }}
+          />
+        </DataViewProvider>
       ) : (
         <Login
           setup={setup}
@@ -341,6 +352,7 @@ export default function ERP() {
   );
 }
 function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
+  const { view: dataView, includes: includeData } = useDataView();
   const [route, setRoute] = useState('dashboard'),
     [filter, setFilter] = useState(''),
     [fy, setFy] = useState('2026–27'),
@@ -444,7 +456,12 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
     let active = true;
     const timeout = setTimeout(() => {
       setSearchError('');
-      api('relationships/search?q=' + encodeURIComponent(search))
+      api(
+        'relationships/search?q=' +
+          encodeURIComponent(search) +
+          '&view=' +
+          encodeURIComponent(dataView),
+      )
         .then((r) => active && setResults(r))
         .catch((e) => active && setSearchError(e.message));
     }, 200);
@@ -530,6 +547,36 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
             <kbd>Ctrl K</kbd>
           </button>
           <div className="header-actions">
+            <DataViewSelect />
+            <Button variant="outline" onClick={() => go('my-work')}>
+              My work
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="outline" />}>
+                Create
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {[
+                  'quotations',
+                  'invoices',
+                  'purchase-orders',
+                  'receipts',
+                  'tasks',
+                ]
+                  .filter(
+                    (r) =>
+                      opMap[r] && permittedOperation(opMap[r], user.role, true),
+                  )
+                  .map((r) => (
+                    <DropdownMenuItem
+                      key={r}
+                      onClick={() => go(r + '?create=1')}
+                    >
+                      {titles[r] || r}
+                    </DropdownMenuItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Pick
               label="Financial year"
               value={fy}
@@ -617,7 +664,18 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
           </div>
         </header>
         <main className="page-content">
-          {!['masters', 'record360'].includes(route) && (
+          <div className="data-view-banner">
+            <span>
+              {dataView} · {records.filter(includeData).length} of{' '}
+              {records.length} records visible
+            </span>
+            {dataView !== 'All data' && (
+              <span>
+                Use Data view above to include imported or historical records.
+              </span>
+            )}
+          </div>
+          {!['masters', 'record360', 'transactions'].includes(route) && (
             <div className="page-heading">
               <div>
                 <div className="breadcrumb">
@@ -688,17 +746,7 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
           )}
           {route === 'dashboard' ? (
             validRange ? (
-              <SimpleDashboard
-                records={records}
-                fy={fy}
-                go={go}
-                role={user.role}
-                loading={loading}
-                error={error}
-                retry={refresh}
-                start={start}
-                end={end}
-              />
+              <WorkDashboard records={records} fy={fy} go={go} />
             ) : (
               <div className="error-box">
                 This period falls outside FY {fy}. Select a different period or
@@ -767,7 +815,7 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
                           key={r.id}
                           value={r.id}
                           onSelect={() => {
-                            go('record360?record=' + encodeURIComponent(r.id));
+                            go(transactionLink(r.id));
                             setSearchOpen(false);
                           }}
                         >
@@ -889,7 +937,36 @@ function PageContent({
         {error}
       </div>
     );
-  if (['reports', 'workspace-settings', 'all-tools'].includes(route))
+  if (route === 'architecture-map')
+    return <ArchitectureMap role={user.role} go={go} />;
+  if (['documents-drive', 'document-inbox'].includes(route))
+    return (
+      <DocumentCenter
+        key={route + fy}
+        records={records}
+        fy={fy}
+        go={go}
+        inbox={route === 'document-inbox'}
+      />
+    );
+  if (processModules[route])
+    return <ProcessHub route={route} role={user.role} go={go} />;
+  if (
+    ['my-work', 'work-calendar'].includes(route) ||
+    (route === 'transactions' &&
+      !new URLSearchParams(window.location.search).get('record'))
+  )
+    return (
+      <WorkDashboard
+        key={route}
+        records={records}
+        fy={fy}
+        go={go}
+        mode={route}
+      />
+    );
+  if (route === 'reconciliation') return <ControlTower go={go} fy={fy} />;
+  if (['reports', 'all-tools'].includes(route))
     return (
       <WorkspaceCatalog
         key={route}
@@ -920,7 +997,7 @@ function PageContent({
     );
   if (route === 'documents-drive')
     return <SimpleDocumentDrive records={records} fy={fy} go={go} />;
-  if (route === 'record360')
+  if (['record360', 'transactions'].includes(route))
     return (
       <Record360
         key={typeof window !== 'undefined' ? window.location.search : ''}

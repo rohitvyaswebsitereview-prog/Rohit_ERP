@@ -1,3 +1,10 @@
+import {
+  lifecycle,
+  workspaceRows,
+  transactionScope,
+  inDataView,
+  sourceState,
+} from '../workflow';
 import { quoteStates, salesKinds } from '../sales-engine';
 import { financial360 } from '../financial-360';
 import {
@@ -184,6 +191,21 @@ export async function relationships(
           { error: 'Task, owner and a valid due date are required.' },
           400,
         );
+      const existingTask = records.find(
+        (t: any) =>
+          t.kind === 'tasks' &&
+          t.sourceId === r.id &&
+          t.name === String(b.name).trim() &&
+          !['Completed', 'Cancelled'].includes(t.status),
+      );
+      if (existingTask)
+        return json(
+          {
+            error:
+              'An open task already exists for this action. Open Tasks to update its owner or due date.',
+          },
+          409,
+        );
       const id = uid(),
         date = stamp().slice(0, 10),
         data = {
@@ -301,18 +323,6 @@ export async function relationships(
         delete clean[k];
     return { ...clean, ...base };
   };
-  if (action === 'search') {
-    const q = (new URL(req.url).searchParams.get('q') || '')
-      .trim()
-      .toLowerCase();
-    if (!q) return json([]);
-    return json(
-      records
-        .filter((r: any) => JSON.stringify(safe(r)).toLowerCase().includes(q))
-        .slice(0, 60)
-        .map((r: any) => ({ ...safe(r), entityType: entityType(r.kind) })),
-    );
-  }
   const stored = (
     await db
       .prepare('SELECT * FROM entity_relationships WHERE tenant_id=?')
@@ -362,6 +372,73 @@ export async function relationships(
       byId.has(e.target_id) &&
       (e.origin === 'manual' || liveKeys.has(e.id)),
   );
+  if (action === 'search') {
+    const params = new URL(req.url).searchParams,
+      q = (params.get('q') || '').trim().toLowerCase();
+    if (!q) return json([]);
+    const matches = records
+      .filter(
+        (r: any) =>
+          inDataView(r, params.get('view') || 'All data') &&
+          JSON.stringify(safe(r)).toLowerCase().includes(q),
+      )
+      .slice(0, 40);
+    const found = new Map<string, any>();
+    for (const r of matches)
+      found.set(r.id, { ...safe(r), match: 'Direct match' });
+    for (const r of matches)
+      for (const n of connected(r.id, records, edges).records)
+        if (
+          found.size < 120 &&
+          !found.has(n.id) &&
+          inDataView(n, params.get('view') || 'All data')
+        )
+          found.set(n.id, { ...safe(n), match: 'Connected record' });
+    return json([...found.values()]);
+  }
+  const permittedFlow = (flow: any) => {
+    if (u.role !== 'Logistics') return flow;
+    const stages = flow.stages.filter(
+      (s: any) =>
+        ![
+          'realisation',
+          'closure',
+          'bank',
+          'evidence',
+          'certificate',
+          'incentive',
+          'payment',
+          'advance',
+        ].includes(s.key),
+    );
+    const next = stages.find((s: any) => s.status !== 'Completed');
+    return {
+      ...flow,
+      stages,
+      next: next ? { ...next, action: next.nextAction } : null,
+    };
+  };
+  if (action === 'workspace') {
+    const params = new URL(req.url).searchParams;
+    const rows = workspaceRows(records, edges).filter(
+      (r) =>
+        (!params.get('fy') || r.fy === params.get('fy')) &&
+        inDataView(r, params.get('view') || 'All data'),
+    );
+    return json(
+      rows.map((r) =>
+        u.role === 'Logistics'
+          ? {
+              ...r,
+              ...permittedFlow({ stages: r.stages, next: r.next }),
+              amount: undefined,
+              currency: undefined,
+              totalUsd: undefined,
+            }
+          : r,
+      ),
+    );
+  }
   if (action === 'control') {
     const exceptions: any[] = [];
     for (const r of records) {
@@ -521,7 +598,13 @@ export async function relationships(
                   ).slice(-2)
               : r.fy,
           ),
-    record: safe(r),
+    record: { ...safe(r), dataState: sourceState(r) },
+    lifecycle: permittedFlow(lifecycle(r, transactionScope(r, records, edges))),
+    transactions: workspaceRows(scope.records, edges).map((t) =>
+      u.role === 'Logistics'
+        ? { ...t, amount: undefined, currency: undefined, totalUsd: undefined }
+        : t,
+    ),
     records: scope.records.map(safe),
     edges: scope.edges,
     candidates: scope.candidates.map((e: any) => ({
