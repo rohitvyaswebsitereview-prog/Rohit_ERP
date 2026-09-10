@@ -1629,10 +1629,6 @@ export default function SalesDocuments({
           <header className="sales-register-header">
             <div>
               <h2>{title}s</h2>
-              <p>
-                Manage drafts, approvals, issued versions and linked
-                transactions.
-              </p>
             </div>
             {canWrite && (
               <Button onClick={() => begin()}>

@@ -110,7 +110,6 @@ export default function Masters({ go }: { go: (route: string) => void }) {
             <span aria-current="page">Masters</span>
           </nav>
           <h1>Masters</h1>
-          <p>Manage the master data used throughout your ERP.</p>
         </div>
         <div className="masters-search">
           <Search size={18} />
@@ -160,7 +159,6 @@ export default function Masters({ go }: { go: (route: string) => void }) {
                     </span>
                     <div>
                       <h2 id={'category-' + c.key}>{c.label}</h2>
-                      <p>{c.description}</p>
                     </div>
                   </header>
                   <ul>

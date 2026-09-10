@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { api, money, Loading, Status } from './erp-ui';
+import { RecordSummary } from './record-summary';
 import { WorkbookRecord } from './workbook-data';
 import { entityLabel, entityType } from '@/lib/relationships';
 const label = (s: string) =>
@@ -199,7 +200,7 @@ export function Record360({
   );
   const next = pending[0];
   return (
-    <div className="r360">
+    <div className="r360 record-workspace">
       <header className="widget r360-header">
         <div className="r360-top">
           <Button variant="outline" onClick={back || (() => go(r.kind))}>
@@ -209,7 +210,7 @@ export function Record360({
           <div className="inline-actions">
             {onManage && (
               <Button variant="outline" onClick={onManage}>
-                Actions
+                Edit / actions
               </Button>
             )}
             {!onManage && !r.importLocked && (
@@ -221,7 +222,7 @@ export function Record360({
                   )
                 }
               >
-                Actions
+                Edit / actions
               </Button>
             )}
             <Button variant="outline" onClick={() => window.print()}>
@@ -232,12 +233,20 @@ export function Record360({
         <h2>{reference(r)}</h2>
         <p>{r.party || r.name || r.serialNumber || ''}</p>
         <div className="r360-top">
-          <Status value={r.status || 'Recorded'} />
-          <strong>
-            {r.amount !== undefined ? money(r.amount, r.currency || 'INR') : ''}
-          </strong>
+          <Status
+            value={
+              r.status === 'Imported'
+                ? 'Historical record'
+                : r.status || 'Recorded'
+            }
+          />
           <span>{r.date || 'Date not supplied'}</span>
-          <span>Version {r.version || 1}</span>
+          <Button variant="outline" onClick={() => setTab('Documents')}>
+            Documents
+          </Button>
+          <Button variant="ghost" onClick={() => setTab('Timeline')}>
+            Activity
+          </Button>
         </div>
       </header>
       {error && (
@@ -312,142 +321,7 @@ export function Record360({
         </label>
       </nav>
       {tab === 'Overview' && (
-        <div className="r360-columns">
-          <section className="widget">
-            <h3>Business information</h3>
-            <dl className="r360-fields">
-              {business.slice(0, 8).map(([k, v]) => (
-                <div key={k}>
-                  <dt>{label(k)}</dt>
-                  <dd>
-                    {k === 'amount'
-                      ? money(Number(v), r.currency || 'INR')
-                      : String(v)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            {r.lines?.length > 0 && (
-              <>
-                <h3>Equipment and lines</h3>
-                <div className="r360-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Line</th>
-                        <th>Product / description</th>
-                        <th>Serial</th>
-                        <th>Quantity</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {r.lines.map((l: any, i: number) => (
-                        <tr key={i}>
-                          <td>{i + 1}</td>
-                          <td>
-                            {l.description ||
-                              l.productName ||
-                              get(l.productId)?.name ||
-                              '—'}
-                          </td>
-                          <td>{l.serialNumber || l.serialNumbers || '—'}</td>
-                          <td>{l.quantity ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-            {business.length > 8 && (
-              <details>
-                <summary>Additional details</summary>
-                <dl className="r360-fields">
-                  {business.slice(8).map(([k, v]) => (
-                    <div key={k}>
-                      <dt>{label(k)}</dt>
-                      <dd>{String(v)}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </details>
-            )}
-            <details>
-              <summary>Related transactions ({nodes.length})</summary>
-
-              <RelatedRecords records={nodes.slice(0, 12)} go={go} />
-              {nodes.length > 12 && (
-                <Button onClick={() => setTab('Transactions')}>
-                  View all {nodes.length} linked records
-                </Button>
-              )}
-            </details>
-          </section>
-          <aside className="widget">
-            <h3>Financial position</h3>
-            {data.financial.summary.map((s: any) => (
-              <p key={s.label}>
-                <strong>
-                  {s.label}: {money(s.balance, s.currency)}
-                </strong>
-                <br />
-                FY sales / purchases: {money(s.ytd, s.currency)}
-              </p>
-            ))}
-            <h3>Next action</h3>
-            {next ? (
-              <>
-                <strong>{next.action}</strong>
-                <p>Suggested team: {next.owner}</p>
-                <p>
-                  No due date is assumed. Assign an owner and deadline in Tasks.
-                </p>
-                <Button
-                  onClick={() => {
-                    setTab('Tasks');
-                    setTask({ name: next.action, owner: next.owner });
-                  }}
-                >
-                  Assign task
-                </Button>
-              </>
-            ) : (
-              <p>
-                {data.pending.length
-                  ? 'Recorded evidence covers the configured checks.'
-                  : 'Review this record and its related transactions.'}
-              </p>
-            )}
-            <details>
-              <summary>Export readiness & connections</summary>
-              <h3>eBRC readiness</h3>
-              <p>
-                {data.pending.length
-                  ? data.pending.filter(
-                      (p: any) =>
-                        !p.complete &&
-                        !['eBRC', 'DBK', 'RoDTEP', 'IGST refund'].includes(
-                          p.key,
-                        ),
-                    ).length
-                    ? 'Not ready — evidence is missing'
-                    : 'Core evidence recorded — review required documents and bank requirements'
-                  : 'No confirmed export invoice linked.'}
-              </p>
-              <p className="muted">
-                A linked record is evidence of recording, not bank or government
-                certification. Receipt coverage and required documents must be
-                reconciled before closure.
-              </p>
-              <h3>Relationship confidence</h3>
-              <p>{data.edges.length} confirmed / reviewed connections</p>
-              <p>{data.candidates.length} potential matches to review</p>
-              <Button variant="outline" onClick={() => setTab('360°')}>
-                Explore connections
-              </Button>
-            </details>
-          </aside>
-        </div>
+        <RecordSummary data={data} go={go} section={setTab} />
       )}
       {tab === 'Transactions' && (
         <section className="widget">
