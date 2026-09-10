@@ -63,6 +63,7 @@ const hubs = new Set([
 export function inferRelationships(records: Entity[]): Relationship[] {
   const byId = new Map(records.map((r) => [r.id, r]));
   const found = new Map<string, Relationship>();
+  const directPairs = new Set<string>();
   const add = (
     r: Entity,
     target: any,
@@ -74,6 +75,7 @@ export function inferRelationships(records: Entity[]): Relationship[] {
     const t = byId.get(String(target));
     if (!t || t.id === r.id) return;
     const id = [r.id, t.id, kind, line].map(encodeURIComponent).join('|');
+    if (!line) directPairs.add(r.id+'|'+t.id);
     found.set(id, {
       id,
       source_id: r.id,
@@ -120,10 +122,7 @@ export function inferRelationships(records: Entity[]): Relationship[] {
       if (
         f.type === 'reference' &&
         r[f.key] &&
-        ![...found.values()].some(
-          (e) =>
-            e.source_id === r.id && e.target_id === r[f.key] && !e.source_line,
-        )
+        !directPairs.has(r.id+'|'+r[f.key])
       )
         add(r, r[f.key], 'REFERENCES', `Explicit ${f.label}`);
     for (const target of r.relatedIds || [])
@@ -382,30 +381,27 @@ export function timelineFor(nodes: Entity[]) {
   );
 }
 
-export function exportScope(
-  root: string,
-  records: Entity[],
-  edges: Relationship[],
-) {
-  const blocked = new Set(
-    records
-      .filter(
-        (r) =>
-          r.id !== root &&
-          (hubs.has(r.kind) ||
-            [
-              'invoices',
-              'domestic-invoices',
-              'purchase-invoices',
-              'expenses',
-              'machines',
-            ].includes(r.kind)),
-      )
-      .map((r) => r.id),
-  );
-  return connected(
-    root,
-    records.filter((r) => !blocked.has(r.id)),
-    edges,
-  );
+const exportIndexes = new WeakMap<Relationship[], {byId:Map<string,Entity>;adj:Map<string,string[]>;records:Entity[]}>();
+export function exportScope(root:string, records:Entity[], edges:Relationship[]){
+ let index=exportIndexes.get(edges);
+ if(!index || index.records!==records){
+  const byId=new Map(records.map(r=>[r.id,r])),adj=new Map<string,string[]>();
+  for(const edge of edges)if(edge.status==='Confirmed'){
+   if(!adj.has(edge.source_id))adj.set(edge.source_id,[]);
+   if(!adj.has(edge.target_id))adj.set(edge.target_id,[]);
+   adj.get(edge.source_id)!.push(edge.target_id);adj.get(edge.target_id)!.push(edge.source_id);
+  }
+  index={byId,adj,records};exportIndexes.set(edges,index);
+ }
+ const visited=new Set([root]);let frontier=[root];
+ for(let depth=0;depth<7&&frontier.length;depth++){
+  const next:string[]=[];
+  for(const id of frontier)for(const target of index.adj.get(id)||[]){
+   const r=index.byId.get(target);
+   if(!r||visited.has(target)||hubs.has(r.kind)||['invoices','domestic-invoices','purchase-invoices','expenses','machines'].includes(r.kind))continue;
+   visited.add(target);next.push(target);
+  }
+  frontier=next;
+ }
+ return {records:[...visited].map(id=>index!.byId.get(id)).filter((r):r is Entity=>!!r)};
 }
