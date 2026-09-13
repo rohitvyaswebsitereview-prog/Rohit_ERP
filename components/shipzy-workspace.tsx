@@ -48,6 +48,7 @@ import { titles } from '@/lib/navigation';
 import { salesKinds, quoteStates } from '@/lib/sales-engine';
 import { financial360 } from '@/lib/financial-360';
 import { ageingBuckets, receivableAgeing } from '@/lib/receivable-ageing';
+import { productSalesMatches, productSalesTotal } from '@/lib/product-sales';
 import { entityLabel, inactive } from '@/lib/relationships';
 import { canOpenWorkspace } from '@/lib/workspace-navigation';
 import { useDataView } from './data-view';
@@ -391,7 +392,8 @@ export default function ShipzyWorkspace({
             <ShipzyReports go={go} role={user.role} />
           ) : m ? (
             <ShipzyRegister
-              key={route + fy}
+              key={route + fy + query}
+              initialQuery={query}
               records={records}
               fy={fy}
               kind={route}
@@ -483,6 +485,7 @@ function ShipzyDashboard({
 }) {
   const [q, setQ] = useState(''),
     [product, setProduct] = useState(''),
+    [salesCurrency, setSalesCurrency] = useState('INR'),
     [currency, setCurrency] = useState('USD');
   const balances = financial360(records, fy).lines.filter(
     (r) =>
@@ -544,37 +547,7 @@ function ShipzyDashboard({
   const products = records.filter((r) => r.kind === 'products');
   const selected = product;
   const months = Array.from({ length: 12 }, (_, i) => (i + 3) % 12);
-  const values = months.map((month) =>
-    records
-      .filter(
-        (r) =>
-          r.kind === 'invoices' &&
-          r.fy === fy &&
-          r.currency === 'INR' &&
-          !inactive(r) &&
-          Number(r.date?.slice(5, 7)) - 1 === month,
-      )
-      .reduce(
-        (n, r) =>
-          n +
-          (r.lines || [])
-            .filter(
-              (l: any) =>
-                !selected ||
-                l.productId === selected ||
-                String(l.description || '')
-                  .toLowerCase()
-                  .includes(
-                    String(
-                      products.find((p) => p.id === selected)?.name ||
-                        '__no_match__',
-                    ).toLowerCase(),
-                  ),
-            )
-            .reduce((a: number, l: any) => a + Number(l.total || 0), 0),
-        0,
-      ),
-  );
+  const values = months.map(month => productSalesTotal(records, fy, salesCurrency, String(month + 1).padStart(2, '0'), selected));
   const max = Math.max(1, ...values);
   return (
     <>
@@ -746,12 +719,19 @@ function ShipzyDashboard({
               ))}
             </select>
           </label>
-          <p className="shipzy-chart-key">■ Product Sales · INR</p>
+          <label className="shipzy-product-select">Currency
+            <select value={salesCurrency} onChange={e => setSalesCurrency(e.target.value)}>
+              {[...new Set(['INR', 'USD', ...records.map(r => r.currency).filter(Boolean)])].map(c => <option key={c}>{c}</option>)}
+            </select>
+          </label>
+          <p className="shipzy-chart-key">Invoice line totals · {salesCurrency} · {fy}</p>
           <div className="shipzy-chart">
             {values.map((v, i) => (
               <div key={i}>
-                <span
-                  title={money(v, 'INR')}
+                <button
+                  aria-label={`${new Date(2026, months[i], 1).toLocaleString('en', { month: 'long' })}: ${money(v, salesCurrency)}. Open invoices`}
+                  title={money(v, salesCurrency)}
+                  onClick={() => go('invoices?' + new URLSearchParams({ salesChart: '1', currency: salesCurrency, month: String(months[i] + 1).padStart(2, '0'), product: selected }))}
                   style={{ height: `${(v / max) * 210}px` }}
                 />
                 <small>
@@ -764,7 +744,7 @@ function ShipzyDashboard({
           </div>
           {!values.some(Boolean) && (
             <p className="shipzy-muted">
-              No INR sales lines linked to this product.
+              No posted or imported {salesCurrency} invoice lines match this selection.
             </p>
           )}
         </section>
@@ -773,12 +753,14 @@ function ShipzyDashboard({
   );
 }
 export function ShipzyRegister({
+  initialQuery = '',
   records,
   fy,
   kind,
   go,
   user,
 }: {
+  initialQuery?: string;
   records: any[];
   fy: string;
   kind: string;
@@ -789,11 +771,14 @@ export function ShipzyRegister({
     [status, setStatus] = useState('All'),
     [size, setSize] = useState(10),
     [page, setPage] = useState(0);
+  const filters = new URLSearchParams(initialQuery);
+  const fromChart = filters.get('salesChart') === '1';
   const m = opMap[kind],
     master = !!m.master,
     rows = records.filter(
       (r) =>
         r.kind === kind &&
+        (!fromChart || productSalesMatches(r, fy, filters.get('currency') || 'INR', filters.get('month') || '', filters.get('product') || '')) &&
         (master || r.fy === fy) &&
         JSON.stringify(r).toLowerCase().includes(q.toLowerCase()) &&
         (status === 'All' ||
@@ -813,6 +798,10 @@ export function ShipzyRegister({
         <ShipzyTotals records={records.filter((r) => !inactive(r))} fy={fy} />
       )}
       <section className="shipzy-panel shipzy-register">
+        {fromChart && <div className="shipzy-table-toolbar"><span>
+          Product sales: {filters.get('currency')} · month {filters.get('month')} · {filters.get('product') ? records.find(r => r.id === filters.get('product'))?.name || 'Selected product' : 'All products'}
+          {' · Matching line total: '}{money(productSalesTotal(records, fy, filters.get('currency') || 'INR', filters.get('month') || '', filters.get('product') || ''), filters.get('currency') || 'INR')}
+        </span><Button variant="outline" onClick={() => go(kind)}>Clear chart filters</Button></div>}
         {!master && (
           <nav className="shipzy-tabs">
             {(kind === 'proformas'

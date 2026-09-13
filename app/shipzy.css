@@ -606,15 +606,15 @@
   align-items: center;
   gap: 12px;
 }
-.shipzy-chart > div > span {
+.shipzy-chart > div > button {
   display: block;
-  min-height: 1px;
+  min-height: 6px;
   width: 15px;
   background: #367f9f;
   border-radius: 4px 4px 0 0;
 }
 .shipzy-chart small {
-  font-size: 11px;
+  font-size: 12px;
   color: #78838a;
   background: #fff;
 }

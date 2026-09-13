@@ -14,6 +14,7 @@ import {shipzyMenus} from './lib/shipzy-navigation';
 import {opMap,operationRoutes} from './lib/operations';
 import {masterReadiness} from './lib/master-readiness';
 import {receivableAgeing} from './lib/receivable-ageing';
+import {productSalesTotal,productSalesMatches} from './lib/product-sales';
 import {ShipzyRegister,ShipzyMasters,ShipzyPayments} from './components/shipzy-workspace';
 let count=0;function check(label,fn){fn();count++;console.log('PASS '+label)}
 check('Ageing treats missing and invalid due dates separately',()=>{
@@ -28,6 +29,13 @@ check('Ageing boundaries use due date rather than invoice date',()=>{
 const custom=new Set(['dashboard','export-docs','pre-shipment','post-shipment','packing-drive','shipment-checklist','documents-drive','costing','reports','masters','logistics-master','profile','users','administration-permissions','receivables','payables','inventory-stock-register']);
 check('Every sidebar destination resolves to a working screen',()=>{for(const menu of shipzyMenus)for(const r of menu.children?menu.children.map(c=>c[0]):[menu.route])assert.ok(opMap[operationRoutes[r]||r]||custom.has(r),'Missing '+r)});
 const r={id:'i',kind:'invoices',reference:'INV-TEST',fy:'2026–27',date:'2026-04-01',status:'Imported',importLocked:true,customerName:'Customer <test>',currency:'INR',amount:118000,lines:[{description:'Excavator',quantity:1,uom:'NOS'}]};
+check('Product chart totals isolate currency, product, month and posted status',()=>{
+  const match={...r,lines:[{productId:'p1',total:12000},{productId:'p2',total:5000}]};
+  const data=[match,{...match,status:'Draft'},{...match,currency:'USD'},{...match,date:'2026-05-01'},{...match,status:'Cancelled'}];
+  assert.equal(productSalesTotal(data,r.fy,'INR','04','p1'),12000);
+  assert.equal(productSalesTotal(data,r.fy,'INR','04',''),17000);
+  assert.equal(data.filter(x=>productSalesMatches(x,r.fy,'INR','04','p1')).length,1);
+});
 check('Receivables drill-through preserves currency, search and ageing',()=>{
   const records=[{...r,id:'a',reference:'MATCH-OVERDUE',dueDate:'2020-01-01'},
     {...r,id:'b',reference:'MATCH-OTHER-CURRENCY',currency:'USD',dueDate:'2020-01-01'},
