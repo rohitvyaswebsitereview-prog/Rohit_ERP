@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { writeFile, rm, mkdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
+import { PDFDocument, PDFName } from 'pdf-lib';
 const require = createRequire(import.meta.resolve('wrangler/package.json'));
 const { build } = require('esbuild');
 const { Miniflare } = require('miniflare');
@@ -12,6 +13,7 @@ await build({
     resolveDir: process.cwd(),
   },
   bundle: true,
+  mainFields: ['module', 'main'],
   format: 'esm',
   platform: 'neutral',
   external: ['cloudflare:workers'],
@@ -752,7 +754,12 @@ try {
   check('Generated customer invoice is a PDF file with company branding text', () => {
     assert.equal(pdfDownload.headers.get('content-type'), 'application/pdf');
     assert.equal(new TextDecoder().decode(pdfBytes.slice(0, 4)), '%PDF');
-    assert.ok(new TextDecoder().decode(pdfBytes).includes('Rohit Test Exports'));
+  });
+  const parsedInvoice = await PDFDocument.load(pdfBytes);
+  check('Generated PDF embeds all three company branding images', () => {
+    assert.equal(parsedInvoice.getAuthor(), 'Rohit Test Exports');
+    const images = parsedInvoice.getPages()[0].node.Resources().lookup(PDFName.of('XObject'));
+    assert.equal(images.keys().length, 3);
   });
   const brokenTemplate = await opCreate('master-document-templates', {
     name: 'Missing data',

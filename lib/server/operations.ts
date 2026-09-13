@@ -433,7 +433,7 @@ export async function operations(
       existing.customsQuery && `Customs query: ${existing.customsQuery}`,
       existing.notes && `Notes: ${existing.notes}`,
     ].filter(Boolean) as string[];
-    const bytes = pdfDocument({
+    const bytes = await pdfDocument({
       title: category,
       company,
       subtitle: existing.reference || existing.name,
