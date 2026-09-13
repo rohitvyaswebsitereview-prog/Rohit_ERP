@@ -1,5 +1,6 @@
 'use client';
 import { ListPreferences } from './list-preferences';
+import { filterDocuments } from '@/lib/document-list';
 import { processState } from '@/lib/workflow';
 import { useDataView } from './data-view';
 import { Record360 } from './record-360';
@@ -1238,6 +1239,14 @@ export function Documents({
   canWrite: boolean;
   reload: () => void;
 }) {
+  const [documentQuery, setDocumentQuery] = useState('');
+  const [documentCategory, setDocumentCategory] = useState('');
+  const [photos, setPhotos] = useState(false);
+  const [latest, setLatest] = useState(false);
+  const [documentPage, setDocumentPage] = useState(0);
+  useEffect(() => setDocumentPage(0), [documentQuery, documentCategory, photos, latest, documents.length]);
+  const filteredDocuments = filterDocuments(documents, documentQuery, documentCategory, photos, latest);
+  const visibleDocuments = filteredDocuments.slice(documentPage * 20, documentPage * 20 + 20);
   const [template, setTemplate] = useState('');
   const pdfTypes = [
     'Customer invoice',
@@ -1417,7 +1426,22 @@ export function Documents({
           {error}
         </p>
       )}
-      {documents.length ? (
+      <div className="op-document-filters">
+        <Button variant={photos ? 'outline' : 'default'} onClick={() => setPhotos(false)} aria-pressed={!photos}>Documents</Button>
+        <Button variant={photos ? 'default' : 'outline'} onClick={() => setPhotos(true)} aria-pressed={photos}>Photo Gallery</Button>
+        <Input aria-label="Search documents" placeholder="Search files, tags or uploader…" value={documentQuery} onChange={e => setDocumentQuery(e.target.value)} />
+        <select aria-label="Document category" value={documentCategory} onChange={e => setDocumentCategory(e.target.value)}>
+          <option value="">All categories</option>
+          {[...new Set(documents.map(d => d.category))].map(c => <option key={c}>{c}</option>)}
+        </select>
+        <label><input type="checkbox" checked={latest} onChange={e => setLatest(e.target.checked)} /> Latest version per category</label>
+      </div>
+      {photos && visibleDocuments.length > 0 ? <div className="op-photo-gallery">
+        {visibleDocuments.map(d => <a key={d.id} href={'/api/v1/operations/documents/' + d.id + '?preview=1'} target="_blank" rel="noreferrer">
+          <img src={'/api/v1/operations/documents/' + d.id + '?preview=1'} alt={d.filename} loading="lazy" />
+          <strong>{d.filename}</strong><span>{d.category} · Version {d.documentVersion}</span>
+        </a>)}
+      </div> : visibleDocuments.length ? (
         <Table>
           <TableHeader>
             <TableRow>
@@ -1434,7 +1458,7 @@ export function Documents({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {documents.map((d) => (
+            {visibleDocuments.map((d) => (
               <TableRow key={d.id}>
                 <TableCell>{d.filename}</TableCell>
                 <TableCell>{d.category}</TableCell>
@@ -1446,8 +1470,9 @@ export function Documents({
                 <TableCell>
                   <a
                     className="text-link"
-                    href={'/api/v1/operations/documents/' + d.id}
-                    download
+                    href={'/api/v1/operations/documents/' + d.id + (d.mime === 'application/pdf' ? '?preview=1' : '')}
+                    target="_blank"
+                    rel="noreferrer"
                   >
                     <Download size={16} />
                     {d.mime === 'application/pdf' ? 'Open PDF' : 'Download'}
@@ -1459,10 +1484,16 @@ export function Documents({
         </Table>
       ) : (
         <Blank
-          title="No documents uploaded"
-          detail="Add source documents, photos or supporting evidence. New uploads retain earlier versions."
+          title={documents.length ? 'No matching files' : 'No documents uploaded'}
+          detail={documents.length ? 'Change the search, category or version filter.' : 'Add source documents, photos or supporting evidence. New uploads retain earlier versions.'}
         />
       )}
+      <div className="op-document-filters">
+        <span role="status">{filteredDocuments.length} matching files</span>
+        <Button variant="outline" disabled={documentPage === 0} onClick={() => setDocumentPage(p => p - 1)}>Previous</Button>
+        <span>Page {documentPage + 1}</span>
+        <Button variant="outline" disabled={(documentPage + 1) * 20 >= filteredDocuments.length} onClick={() => setDocumentPage(p => p + 1)}>Next</Button>
+      </div>
     </div>
   );
 }

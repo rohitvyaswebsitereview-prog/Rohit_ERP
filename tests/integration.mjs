@@ -771,6 +771,18 @@ try {
     { headers: { Cookie: cookie } },
   );
   const pdfBytes = new Uint8Array(await pdfDownload.arrayBuffer());
+  const previewResponse = await mf.dispatchFetch(
+    `http://localhost/api/v1/operations/documents/${r.data.id}?preview=1`,
+    { headers: { Cookie: cookie } },
+  );
+  check('PDF preview is inline while ordinary download remains an attachment', () => {
+    assert.ok(previewResponse.headers.get('content-disposition').startsWith('inline;'));
+    assert.ok(pdfDownload.headers.get('content-disposition').startsWith('attachment;'));
+    assert.equal(previewResponse.headers.get('cache-control'), 'no-store');
+  });
+  assert.deepEqual(new Uint8Array(await previewResponse.arrayBuffer()), pdfBytes);
+  const deniedPreview = await mf.dispatchFetch(`http://localhost/api/v1/operations/documents/${r.data.id}?preview=1`);
+  check('Document preview still requires authentication', () => assert.equal(deniedPreview.status, 401));
   check('Generated customer invoice is a PDF file with company branding text', () => {
     assert.equal(pdfDownload.headers.get('content-type'), 'application/pdf');
     assert.equal(new TextDecoder().decode(pdfBytes.slice(0, 4)), '%PDF');

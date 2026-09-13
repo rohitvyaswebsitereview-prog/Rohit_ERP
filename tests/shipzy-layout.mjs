@@ -15,8 +15,18 @@ import {opMap,operationRoutes} from './lib/operations';
 import {masterReadiness} from './lib/master-readiness';
 import {receivableAgeing} from './lib/receivable-ageing';
 import {productSalesTotal,productSalesMatches} from './lib/product-sales';
+import {filterDocuments} from './lib/document-list';
 import {ShipzyRegister,ShipzyMasters,ShipzyPayments} from './components/shipzy-workspace';
 let count=0;function check(label,fn){fn();count++;console.log('PASS '+label)}
+check('Document filters preserve history and isolate latest versions per record/category',()=>{
+  const files=[{id:'old',entityId:'a',category:'Invoice',documentVersion:1,filename:'old.pdf'},
+    {id:'new',entityId:'a',category:'Invoice',documentVersion:2,filename:'new.pdf'},
+    {id:'photo',entityId:'a',category:'Photo',documentVersion:1,filename:'crate.png',mime:'image/png',tags:'packing'},
+    {id:'other',entityId:'b',category:'Invoice',documentVersion:1,filename:'other.pdf'}];
+  assert.equal(filterDocuments(files,'','',false,false).length,4);
+  assert.deepEqual(filterDocuments(files,'','Invoice',false,true).map(d=>d.id),['new','other']);
+  assert.deepEqual(filterDocuments(files,' packing ','',true,false).map(d=>d.id),['photo']);
+});
 check('Ageing treats missing and invalid due dates separately',()=>{
   for(const date of [undefined,'','2026-02-30','not-a-date']) assert.equal(receivableAgeing(date,'2026-09-13'),'No due date');
 });

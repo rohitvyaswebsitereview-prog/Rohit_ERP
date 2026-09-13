@@ -210,7 +210,7 @@ export async function operations(
       return new Response(file.body, {
         headers: {
           'Content-Type': doc.mime,
-          'Content-Disposition': `attachment; filename="${doc.filename.replace(/[^a-zA-Z0-9._-]/g, '_')}"`,
+          'Content-Disposition': `${new URL(req.url).searchParams.get('preview') === '1' && ['application/pdf', 'image/png', 'image/jpeg'].includes(doc.mime) ? 'inline' : 'attachment'}; filename="${doc.filename.replace(/[^a-zA-Z0-9._-]/g, '_')}"`,
           'X-Content-Type-Options': 'nosniff',
           'Cache-Control': 'no-store',
         },
