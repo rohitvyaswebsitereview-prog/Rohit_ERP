@@ -47,6 +47,7 @@ import { masterReadiness, activeMaster } from '@/lib/master-readiness';
 import { titles } from '@/lib/navigation';
 import { salesKinds, quoteStates } from '@/lib/sales-engine';
 import { financial360 } from '@/lib/financial-360';
+import { ageingBuckets, receivableAgeing } from '@/lib/receivable-ageing';
 import { entityLabel, inactive } from '@/lib/relationships';
 import { canOpenWorkspace } from '@/lib/workspace-navigation';
 import { useDataView } from './data-view';
@@ -379,6 +380,8 @@ export default function ShipzyWorkspace({
             <ShipzyDrive records={records} fy={fy} go={go} route={route} />
           ) : ['receivables', 'payables'].includes(route) ? (
             <ShipzyPayments
+              key={route + query}
+              initialQuery={query}
               records={records}
               fy={fy}
               go={go}
@@ -493,21 +496,9 @@ function ShipzyDashboard({
   const invoiceById = (id: string) => records.find((r) => r.id === id);
   const bucket = (r: any) => {
     const inv = invoiceById(r.id);
-    const due = inv?.dueDate || r.date || todayIso;
-    const days = Math.floor(
-      (Date.parse(todayIso) - Date.parse(due.slice(0, 10))) / 86400000,
-    );
-    return days <= 0
-      ? 'Current'
-      : days <= 30
-        ? '1-30'
-        : days <= 60
-          ? '31-60'
-          : days <= 90
-            ? '61-90'
-            : '90+';
+    return receivableAgeing(inv?.dueDate, todayIso);
   };
-  const ageing = ['Current', '1-30', '31-60', '61-90', '90+'].map((b) => ({
+  const ageing = ageingBuckets.map((b) => ({
     bucket: b,
     value: balances
       .filter((r) => bucket(r) === b)
@@ -515,7 +506,7 @@ function ShipzyDashboard({
   }));
   const alerts = [
     ...balances
-      .filter((r) => bucket(r) !== 'Current')
+      .filter((r) => !['Current', 'No due date'].includes(bucket(r)))
       .slice(0, 4)
       .map((r) => ({
         id: 'due-' + r.id,
@@ -678,15 +669,14 @@ function ShipzyDashboard({
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
             >
-              <option>USD</option>
-              <option>INR</option>
+              {[...new Set(['USD', 'INR', ...records.map(r => r.currency).filter(Boolean)])].map(c => <option key={c}>{c}</option>)}
             </select>
           </label>
           <div className="shipzy-ageing-strip">
             {ageing.map((a) => (
               <button
                 key={a.bucket}
-                onClick={() => go('receivables')}
+                onClick={() => go('receivables?' + new URLSearchParams({ currency, q, ageing: a.bucket, outstanding: '1' }))}
               >
                 <span>{a.bucket}</span>
                 <strong>{money(a.value, currency)}</strong>
@@ -734,7 +724,7 @@ function ShipzyDashboard({
           {!balances.length && <Blank title="No pending receivables" />}
           <footer>
             Showing {Math.min(balances.length, 8)} of {balances.length} entries{' '}
-            <button onClick={() => go('receivables')}>View all</button>
+            <button onClick={() => go('receivables?' + new URLSearchParams({ currency, q, outstanding: '1' }))}>View all</button>
           </footer>
         </section>
         <section className="shipzy-panel">
@@ -1868,28 +1858,35 @@ function ShipzyChecklist({ fy, go }: { fy: string; go: any }) {
     </section>
   );
 }
-function ShipzyPayments({
+export function ShipzyPayments({
+  initialQuery = '',
   records,
   fy,
   go,
   payable = false,
 }: {
+  initialQuery?: string;
   records: any[];
   fy: string;
   go: any;
   payable?: boolean;
 }) {
+  const initial = new URLSearchParams(initialQuery);
+  const [ageing, setAgeing] = useState(ageingBuckets.includes(initial.get('ageing') || '') ? initial.get('ageing')! : ''),
+    [outstanding, setOutstanding] = useState(initial.get('outstanding') === '1');
   const [tab, setTab] = useState('All'),
-    [currency, setCurrency] = useState(payable ? 'INR' : 'USD'),
-    [q, setQ] = useState(''),
+    [currency, setCurrency] = useState(initial.get('currency') || (payable ? 'INR' : 'USD')),
+    [q, setQ] = useState(initial.get('q') || ''),
     [page, setPage] = useState(0);
-  useEffect(() => setPage(0), [tab, currency, q, fy]);
+  useEffect(() => setPage(0), [tab, currency, q, fy, ageing, outstanding]);
   const status = (r: any) =>
     r.balance <= 0 ? 'Paid' : r.settled > 0 ? 'Partially Paid' : 'Unpaid';
   const rows = financial360(records, fy).lines.filter(
     (r) =>
       r.fy === fy &&
       r.type === (payable ? 'Payable' : 'Receivable') &&
+      (!outstanding || r.balance > 0) &&
+      (!ageing || receivableAgeing(records.find(inv => inv.id === r.id)?.dueDate) === ageing) &&
       r.currency === currency &&
       (tab === 'All' || status(r) === tab) &&
       JSON.stringify(r).toLowerCase().includes(q.toLowerCase()),
@@ -1919,6 +1916,11 @@ function ShipzyPayments({
         )}
       </nav>
       <div className="shipzy-table-toolbar">
+        <label>Ageing <select aria-label="Ageing range" value={ageing} onChange={e => setAgeing(e.target.value)}>
+          <option value="">All due dates</option>
+          {ageingBuckets.map(b => <option key={b}>{b}</option>)}
+        </select></label>
+        <label><input type="checkbox" checked={outstanding} onChange={e => setOutstanding(e.target.checked)} /> Outstanding only</label>
         <label>
           Currency{' '}
           <select
