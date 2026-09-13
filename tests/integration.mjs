@@ -439,6 +439,26 @@ try {
     assert.equal(r.status, 200, JSON.stringify(r.data));
     return r.data.record;
   }
+  const measuredProduct = await opCreate('products', {
+    name: 'Measured equipment', sku: 'MEASURE-01', weight: '100', grossWeight: '120',
+    lengthCm: '200', widthCm: '100', heightCm: '50', productTag: 'Export crate',
+  });
+  const measured = await opGet('products', measuredProduct);
+  check('Product measurements calculate cubic metres and preserve net weight', () => {
+    assert.equal(measured.volumeM3, 1);
+    assert.equal(measured.weight, '100');
+    assert.equal(measured.grossWeight, '120');
+    assert.equal(measured.productTag, 'Export crate');
+  });
+  for (const [label, values] of [
+    ['Gross weight below net weight', {weight:'100',grossWeight:'90'}],
+    ['Incomplete dimensions', {lengthCm:'200'}],
+    ['Negative measurement', {weight:'-1'}],
+    ['Excessive GST percentage', {gstRate:'101'}],
+  ]) {
+    const invalid = await call('operations/products', {name:'Invalid measurement',sku:'INVALID',...values});
+    check(label + ' is rejected', () => assert.equal(invalid.status, 400));
+  }
   async function opStatus(kind, id, status) {
     const rec = await opGet(kind, id);
     return call(`operations/${kind}/${id}/status`, {

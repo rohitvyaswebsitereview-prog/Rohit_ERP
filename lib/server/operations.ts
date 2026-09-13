@@ -1480,6 +1480,17 @@ export async function operations(
     }
     data[field.key] = v;
   }
+  if (kind === 'products') {
+    if (data.grossWeight !== '' && data.weight !== '' && Number(data.grossWeight) < Number(data.weight))
+      throw new Error('Gross weight must be at least the net weight.');
+    if (Number(data.gstRate) > 100) throw new Error('GST percentage cannot exceed 100.');
+    const dimensions = [data.lengthCm, data.widthCm, data.heightCm];
+    if (dimensions.some(v => v !== '') && dimensions.some(v => v === ''))
+      throw new Error('Enter length, width and height together to calculate volume.');
+    data.volumeM3 = dimensions.every(v => v !== '')
+      ? Number((dimensions.reduce((n, v) => n * Number(v), 1) / 1000000).toPrecision(12))
+      : '';
+  }
   if (data.dueDate && data.dueDate < data.date)
     throw new Error('Due date cannot precede the document date.');
   if (kind === 'approvals') {

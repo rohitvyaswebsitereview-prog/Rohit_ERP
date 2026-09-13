@@ -542,6 +542,13 @@ export default function Operations({
                   {m.fields
                     .filter((f) => (f.section || 'Basic') === s)
                     .map(input)}
+                  {kind === 'products' && s === 'Measurements' && <div className="op-wide" role="status">
+                    <strong>Volume (m³): </strong>
+                    {['lengthCm', 'widthCm', 'heightCm'].every(k => draft[k] !== '' && draft[k] !== undefined)
+                      ? (Number(draft.lengthCm) * Number(draft.widthCm) * Number(draft.heightCm) / 1000000).toLocaleString(undefined, { maximumFractionDigits: 9 })
+                      : 'Enter length, width and height'}
+                    <p>Weights are per product unit. Gross weight includes packaging.</p>
+                  </div>}
                 </div>
               </TabsContent>
             ))}
