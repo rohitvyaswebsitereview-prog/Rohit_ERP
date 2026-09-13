@@ -466,6 +466,29 @@ try {
     name: 'Lathe',
     sku: 'LATHE-1',
   });
+  const tinyPng =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/atX7V8AAAAASUVORK5CYII=';
+  const company = await opCreate('master-company-information', {
+    name: 'Rohit Test Exports',
+    tradeName: "Rohit's ERP",
+    gstin: '27ABCDE1234F1Z5',
+    pan: 'ABCDE1234F',
+    iec: 'IEC1234567',
+    email: 'documents@example.test',
+    phone: '9999999999',
+    address: 'Test House, Mumbai',
+    country: 'India',
+    logoDataUrl: tinyPng,
+    signatureDataUrl: tinyPng,
+    headerDataUrl: tinyPng,
+    authorizedSignatory: 'Rohit Vyas',
+    invoicePrefix: 'INV',
+    customsPrefix: 'CUS',
+    footerText: 'Computer generated document',
+  });
+  check('Company profile stores branding assets and document defaults', () =>
+    assert.ok(company),
+  );
   const base = {
     reference: 'Q-TEST-1',
     date: '2026-09-09',
@@ -714,6 +737,22 @@ try {
   check('Generated document is a DOCX archive', () => {
     assert.deepEqual([...generatedBytes.slice(0, 4)], [80, 75, 3, 4]);
     assert.match(generated.headers.get('content-type'), /wordprocessingml/);
+  });
+  r = await call(`operations/invoices/${commercial}/pdf`, {
+    category: 'Customer invoice',
+  });
+  check('Customer invoice PDF generation stores a document', () =>
+    assert.equal(r.status, 201, JSON.stringify(r.data)),
+  );
+  const pdfDownload = await mf.dispatchFetch(
+    `http://localhost/api/v1/operations/documents/${r.data.id}`,
+    { headers: { Cookie: cookie } },
+  );
+  const pdfBytes = new Uint8Array(await pdfDownload.arrayBuffer());
+  check('Generated customer invoice is a PDF file with company branding text', () => {
+    assert.equal(pdfDownload.headers.get('content-type'), 'application/pdf');
+    assert.equal(new TextDecoder().decode(pdfBytes.slice(0, 4)), '%PDF');
+    assert.ok(new TextDecoder().decode(pdfBytes).includes('Rohit Test Exports'));
   });
   const brokenTemplate = await opCreate('master-document-templates', {
     name: 'Missing data',

@@ -2383,6 +2383,21 @@ button[data-slot='button'][data-size='icon'] {
 .op-print-brand {
   display: none;
 }
+.op-image-field {
+  align-items: start;
+}
+.op-image-field img {
+  max-width: 220px;
+  max-height: 92px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  padding: 8px;
+}
+.op-image-field small {
+  color: var(--muted-foreground);
+}
 .op-overdue {
   color: #b42332;
   font-weight: 650;

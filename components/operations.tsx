@@ -69,6 +69,21 @@ const emptyLine = () => ({
   roundOff: '0',
   serialNumbers: '',
 });
+const readImageDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      reject(new Error('Choose a PNG or JPEG image.'));
+      return;
+    }
+    if (file.size > 350 * 1024) {
+      reject(new Error('Choose an image up to 350 KB.'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 function SelectField({
   field,
   value,
@@ -391,6 +406,37 @@ export default function Operations({
           onChange={(v) => set(f.key, v)}
           data={data}
         />
+      ) : f.type === 'dataurl' ? (
+        <label className="field op-image-field">
+          <span>{f.label}</span>
+          {draft[f.key] ? (
+            <img src={draft[f.key]} alt={f.label + ' preview'} />
+          ) : (
+            <small>No image saved</small>
+          )}
+          <Input
+            type="file"
+            accept="image/png,image/jpeg"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                set(f.key, await readImageDataUrl(file));
+              } catch (err: any) {
+                setError(err.message);
+              }
+            }}
+          />
+          {draft[f.key] && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => set(f.key, '')}
+            >
+              Remove image
+            </Button>
+          )}
+        </label>
       ) : (
         <label className="field">
           <span>
@@ -1186,6 +1232,17 @@ export function Documents({
   reload: () => void;
 }) {
   const [template, setTemplate] = useState('');
+  const pdfTypes = [
+    'Customer invoice',
+    'Commercial invoice',
+    'Customs document',
+    'Packing list',
+    'Certificate of origin',
+  ];
+  const [pdfType, setPdfType] = useState(
+    module.documents.find((d) => /invoice|customs|packing/i.test(d)) ||
+      pdfTypes[0],
+  );
   const [category, setCategory] = useState(
       module.documents[0] || 'Supporting document',
     ),
@@ -1227,25 +1284,28 @@ export function Documents({
   return (
     <div className="op-documents">
       {canWrite && (
-        <div className="op-upload">
-          <SelectField
-            field={{
-              key: 'templateId',
-              label: 'Document template',
-              source: 'master-document-templates',
-            }}
-            value={template}
-            onChange={setTemplate}
-            data={data}
-          />
+        <div className="op-upload op-document-create-menu">
+          <label className="field">
+            <span>PDF document type</span>
+            <Input
+              list="pdf-document-types"
+              value={pdfType}
+              onChange={(e) => setPdfType(e.target.value)}
+            />
+            <datalist id="pdf-document-types">
+              {[...new Set([...module.documents, ...pdfTypes])].map((t) => (
+                <option key={t}>{t}</option>
+              ))}
+            </datalist>
+          </label>
           <Button
-            disabled={!template || busy}
+            disabled={busy || !pdfType.trim()}
             onClick={async () => {
               setBusy(true);
               setError('');
               try {
-                await api(`operations/${entity.kind}/${entity.id}/generate`, {
-                  templateId: template,
+                await api(`operations/${entity.kind}/${entity.id}/pdf`, {
+                  category: pdfType,
                 });
                 reload();
               } catch (e: any) {
@@ -1255,8 +1315,40 @@ export function Documents({
               }
             }}
           >
-            Generate Word document
+            Generate PDF
           </Button>
+          <div className="op-template-box">
+            <SelectField
+              field={{
+                key: 'templateId',
+                label: 'Word template',
+                source: 'master-document-templates',
+              }}
+              value={template}
+              onChange={setTemplate}
+              data={data}
+            />
+            <Button
+              variant="outline"
+              disabled={!template || busy}
+              onClick={async () => {
+                setBusy(true);
+                setError('');
+                try {
+                  await api(`operations/${entity.kind}/${entity.id}/generate`, {
+                    templateId: template,
+                  });
+                  reload();
+                } catch (e: any) {
+                  setError(e.message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Generate Word
+            </Button>
+          </div>
         </div>
       )}
       <div className="op-checklist">
@@ -1351,7 +1443,7 @@ export function Documents({
                     download
                   >
                     <Download size={16} />
-                    Download
+                    {d.mime === 'application/pdf' ? 'Open PDF' : 'Download'}
                   </a>
                 </TableCell>
               </TableRow>

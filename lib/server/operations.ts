@@ -1,5 +1,6 @@
 import { calculate } from '../transaction-rules';
 import { wordDocument } from './word-document';
+import { pdfDocument } from './pdf-document';
 import {
   opMap,
   operationModules,
@@ -28,6 +29,17 @@ const clean = (v: any, max = 2000) =>
   String(v ?? '')
     .trim()
     .slice(0, max);
+const activeCompany = (records: any[]) =>
+  records.find(
+    (r: any) => r.kind === 'master-company-information' && r.status === 'Active',
+  ) || { name: "Rohit's ERP" };
+const imageDataUrl = (v: string, label: string) => {
+  if (!v) return '';
+  if (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(v))
+    throw new Error(`${label} must be a PNG or JPEG image.`);
+  if (v.length > 500000) throw new Error(`${label} must be up to 350 KB.`);
+  return v;
+};
 const today = () => new Date().toISOString();
 const makeId = () => crypto.randomUUID();
 const references: Record<string, string[]> = {
@@ -252,7 +264,7 @@ export async function operations(
   if (
     existing?.importLocked &&
     req.method === 'POST' &&
-    !['document', 'print', 'email-draft'].includes(action || '')
+    !['document', 'pdf', 'print', 'email-draft'].includes(action || '')
   )
     return json(
       {
@@ -274,7 +286,9 @@ export async function operations(
   if (
     existing?.salesEngine === 2 &&
     req.method === 'POST' &&
-    !['document', 'print', 'email-draft', 'generate'].includes(action || '') &&
+    !['document', 'pdf', 'print', 'email-draft', 'generate'].includes(
+      action || '',
+    ) &&
     !(
       action === 'status' &&
       ['invoices', 'domestic-invoices'].includes(kind) &&
@@ -309,11 +323,7 @@ export async function operations(
     const values: Record<string, string> = {
       reference: existing.reference || existing.name,
       date: existing.date || '',
-      company:
-        all.find(
-          (r: any) =>
-            r.kind === 'master-company-information' && r.status === 'Active',
-        )?.name || "Rohit's ERP",
+      company: activeCompany(all).tradeName || activeCompany(all).name,
       total: existing.amount
         ? `${existing.currency} ${(existing.amount / 100).toFixed(2)}`
         : '',
@@ -383,6 +393,89 @@ export async function operations(
           templateVersion: template.version,
           filename,
         }),
+      ]);
+    } catch (e) {
+      await bucket.delete(objectKey);
+      throw e;
+    }
+    return json({ id: did }, 201);
+  }
+  if (action === 'pdf') {
+    if (!bucket)
+      return json({ error: 'Document storage is unavailable.' }, 503);
+    const category = clean(
+      b.category ||
+        (['shipping-bills', 'customs', 'bill-of-entry'].includes(kind)
+          ? 'Customs document'
+          : 'Customer invoice'),
+      100,
+    );
+    const company = activeCompany(all);
+    const partner = find(existing.partnerId) || {};
+    const source = find(existing.sourceId) || {};
+    const lines = [
+      `Reference: ${existing.reference || existing.name}`,
+      `Date: ${existing.date || ''}`,
+      partner.name && `Customer / supplier: ${partner.name}`,
+      existing.consignee && `Consignee: ${existing.consignee}`,
+      existing.notifyParty && `Notify party: ${existing.notifyParty}`,
+      existing.portId && `Port: ${find(existing.portId)?.name || ''}`,
+      source.reference && `Source: ${source.reference}`,
+      existing.currency &&
+        existing.amount &&
+        `Amount: ${existing.currency} ${(existing.amount / 100).toFixed(2)}`,
+      ...(existing.lines || []).map(
+        (l: any, i: number) =>
+          `${i + 1}. ${l.description || l.productName || 'Item'} | Qty ${l.quantity || ''} ${l.uom || ''} | ${
+            existing.currency || ''
+          } ${l.total === undefined ? '' : (l.total / 100).toFixed(2)}`,
+      ),
+      existing.customsQuery && `Customs query: ${existing.customsQuery}`,
+      existing.notes && `Notes: ${existing.notes}`,
+    ].filter(Boolean) as string[];
+    const bytes = pdfDocument({
+      title: category,
+      company,
+      subtitle: existing.reference || existing.name,
+      lines,
+      signature: company.authorizedSignatory,
+    });
+    const did = makeId(),
+      objectKey = `${u.tenant_id}/${rid}/${did}`,
+      filename =
+        (existing.reference || existing.name || category).replace(
+          /[^a-zA-Z0-9_-]/g,
+          '_',
+        ) + '.pdf';
+    await bucket.put(objectKey, bytes, {
+      httpMetadata: { contentType: 'application/pdf' },
+    });
+    try {
+      await db.batch([
+        saveNew(
+          'op-document',
+          {
+            entityId: rid,
+            entityKind: kind,
+            category,
+            filename,
+            mime: 'application/pdf',
+            size: bytes.length,
+            objectKey,
+            documentVersion:
+              all.filter(
+                (r: any) =>
+                  r.kind === 'op-document' &&
+                  r.entityId === rid &&
+                  r.category === category,
+              ).length + 1,
+            status: 'Draft',
+            uploadedBy: u.name,
+            generated: true,
+          },
+          did,
+        ),
+        event('Generated PDF', kind, rid, { filename, category }),
       ]);
     } catch (e) {
       await bucket.delete(objectKey);
@@ -1355,8 +1448,16 @@ export async function operations(
       );
       continue;
     }
-    let v = clean(b[field.key], field.type === 'textarea' ? 12000 : 500);
+    let v = clean(
+      b[field.key],
+      field.type === 'textarea'
+        ? 12000
+        : field.type === 'dataurl'
+          ? 500000
+          : 500,
+    );
     if (field.required && !v) throw new Error(`${field.label} is required.`);
+    if (field.type === 'dataurl') v = imageDataUrl(v, field.label);
     if (v && field.type === 'date') validDate(v);
     if (
       v &&

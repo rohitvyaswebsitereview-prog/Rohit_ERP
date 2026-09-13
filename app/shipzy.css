@@ -450,6 +450,86 @@
   margin-top: 3px !important;
   color: #5d7770;
 }
+.shipzy-alert-center > header > div {
+  display: grid;
+  gap: 4px;
+}
+.shipzy-alert-center > header span,
+.shipzy-panel > header span {
+  color: #859098;
+  font-size: 12px;
+}
+.shipzy-alert-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 0 23px 23px;
+}
+.shipzy-alert-grid button {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 10px;
+  text-align: left;
+  border: 1px solid #e5e9ed;
+  border-radius: 4px;
+  padding: 14px;
+  background: #fff;
+}
+.shipzy-alert-grid svg {
+  color: #d4a24b;
+}
+.shipzy-alert-grid strong {
+  grid-column: 1 / -1;
+  color: #43505a;
+  font-size: 13px;
+  font-weight: 600;
+}
+.shipzy-alert-grid small {
+  grid-column: 1 / -1;
+  color: #7b878e;
+  font-size: 12px;
+}
+.shipzy-alert-severity {
+  justify-self: start;
+  color: #fff;
+  background: #d4a24b;
+  border-radius: 3px;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+.shipzy-alert-severity.Critical {
+  background: #c75d5d;
+}
+.shipzy-alert-severity.Attention {
+  background: #5799bf;
+}
+.shipzy-all-clear {
+  margin: 0 23px 23px;
+  color: #497c68;
+  background: #eff8f4;
+  border: 1px solid #d9eee5;
+  border-radius: 4px;
+  padding: 14px 16px;
+}
+.shipzy-mini-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 8px;
+}
+.shipzy-mini-steps i {
+  font-style: normal;
+  text-align: center;
+  font-size: 10px;
+  color: #859198;
+  background: #eef2f4;
+  border-radius: 20px;
+  padding: 4px 2px;
+}
+.shipzy-mini-steps i.done {
+  color: #fff;
+  background: #35aa7e;
+}
 .shipzy-dashboard-grid {
   display: grid;
   grid-template-columns: 1.2fr 1fr;
@@ -470,6 +550,30 @@
   gap: 14px;
   padding: 14px 24px;
   font-size: 13px;
+}
+.shipzy-ageing-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 23px 18px;
+}
+.shipzy-ageing-strip button {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  border: 1px solid #e5e9ed;
+  border-radius: 4px;
+  background: #fbfcfd;
+  padding: 9px 10px;
+}
+.shipzy-ageing-strip span {
+  color: #839098;
+  font-size: 11px;
+}
+.shipzy-ageing-strip strong {
+  color: #4d5962;
+  font-size: 13px;
+  font-weight: 600;
 }
 .shipzy-chart-key {
   text-align: center;
@@ -634,6 +738,23 @@
 }
 .shipzy-document-editor {
   padding: 25px;
+}
+.shipzy-document-editor .op-document-create-menu {
+  align-items: end;
+  background: #f8fafb;
+  border: 1px solid #e5e9ed;
+  border-radius: 4px;
+  margin-bottom: 18px;
+  padding: 14px;
+}
+.shipzy-document-editor .op-template-box {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.shipzy-document-editor .op-template-box .field {
+  min-width: 240px;
 }
 .shipzy-document-editor .op-toolbar {
   padding: 0 0 18px;
@@ -836,6 +957,12 @@
   .shipzy-order-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .shipzy-alert-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .shipzy-ageing-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .shipzy-header h1 {
     max-width: 160px;
     overflow: hidden;
@@ -935,6 +1062,10 @@
     width: 150px;
   }
   .shipzy-order-grid {
+    grid-template-columns: 1fr;
+  }
+  .shipzy-alert-grid,
+  .shipzy-ageing-strip {
     grid-template-columns: 1fr;
   }
   .shipzy-tabs {

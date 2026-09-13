@@ -15,6 +15,7 @@ import {
   ArrowUpRight,
   Download,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -486,6 +487,59 @@ function ShipzyDashboard({
       r.balance > 0 &&
       JSON.stringify(r).toLowerCase().includes(q.toLowerCase()),
   );
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const invoiceById = (id: string) => records.find((r) => r.id === id);
+  const bucket = (r: any) => {
+    const inv = invoiceById(r.id);
+    const due = inv?.dueDate || r.date || todayIso;
+    const days = Math.floor(
+      (Date.parse(todayIso) - Date.parse(due.slice(0, 10))) / 86400000,
+    );
+    return days <= 0
+      ? 'Current'
+      : days <= 30
+        ? '1-30'
+        : days <= 60
+          ? '31-60'
+          : days <= 90
+            ? '61-90'
+            : '90+';
+  };
+  const ageing = ['Current', '1-30', '31-60', '61-90', '90+'].map((b) => ({
+    bucket: b,
+    value: balances
+      .filter((r) => bucket(r) === b)
+      .reduce((s, r) => s + r.balance, 0),
+  }));
+  const alerts = [
+    ...balances
+      .filter((r) => bucket(r) !== 'Current')
+      .slice(0, 4)
+      .map((r) => ({
+        id: 'due-' + r.id,
+        severity: bucket(r) === '90+' ? 'Critical' : 'Warning',
+        title: r.reference + ' receivable overdue',
+        detail: money(r.balance, r.currency) + ' pending · ' + bucket(r) + ' days',
+        route: 'invoices?record=' + encodeURIComponent(r.id),
+      })),
+    ...records
+      .filter(
+        (r) =>
+          ['shipments', 'bills-of-lading'].includes(r.kind) &&
+          r.fy === fy &&
+          !inactive(r) &&
+          r.eta &&
+          r.eta < todayIso,
+      )
+      .slice(0, 3)
+      .map((r) => ({
+        id: 'eta-' + r.id,
+        severity: 'Attention',
+        title: entityLabel(r) + ' ETA needs review',
+        detail: 'ETA ' + dateLabel(r.eta),
+        route: recordLink(r, 'Shipment Details'),
+      })),
+  ];
   const orders = records
     .filter(
       (r) =>
@@ -532,9 +586,39 @@ function ShipzyDashboard({
   return (
     <>
       <ShipzyTotals records={records} fy={fy} />
+      <section className="shipzy-panel shipzy-alert-center">
+        <header>
+          <div>
+            <h2>Start Of Day Alerts</h2>
+            <span>As of {new Date().toLocaleString('en-IN')}</span>
+          </div>
+          <Button variant="outline" onClick={() => go('shipment-checklist')}>
+            Open Checklist
+          </Button>
+        </header>
+        {alerts.length ? (
+          <div className="shipzy-alert-grid">
+            {alerts.map((a) => (
+              <button key={a.id} onClick={() => go(a.route)}>
+                <AlertTriangle size={18} />
+                <span className={'shipzy-alert-severity ' + a.severity}>
+                  {a.severity}
+                </span>
+                <strong>{a.title}</strong>
+                <small>{a.detail}</small>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="shipzy-all-clear">No overdue receivables or shipment ETA alerts for this view.</div>
+        )}
+      </section>
       <section className="shipzy-panel">
         <header>
-          <h2>Running Order Status</h2>
+          <div>
+            <h2>Running Order Status</h2>
+            <span>Stage, owner and next action view</span>
+          </div>
           <Button variant="outline" onClick={() => go('invoices')}>
             View All
           </Button>
@@ -550,6 +634,27 @@ function ShipzyDashboard({
               </span>
               <small>{dateLabel(r.date)}</small>
               <p>{r.sourceStatus || r.status}</p>
+              <div className="shipzy-mini-steps" aria-hidden="true">
+                {['PI', 'Docs', 'Ship', 'Pay'].map((s, i) => (
+                  <i
+                    key={s}
+                    className={
+                      i <
+                      (r.kind === 'proformas'
+                        ? 1
+                        : r.sourceStatus?.toLowerCase().includes('payment')
+                          ? 4
+                          : r.sourceStatus?.toLowerCase().includes('ship')
+                            ? 3
+                            : 2)
+                        ? 'done'
+                        : ''
+                    }
+                  >
+                    {s}
+                  </i>
+                ))}
+              </div>
             </button>
           ))}
         </div>
@@ -575,6 +680,17 @@ function ShipzyDashboard({
               <option>INR</option>
             </select>
           </label>
+          <div className="shipzy-ageing-strip">
+            {ageing.map((a) => (
+              <button
+                key={a.bucket}
+                onClick={() => go('receivables')}
+              >
+                <span>{a.bucket}</span>
+                <strong>{money(a.value, currency)}</strong>
+              </button>
+            ))}
+          </div>
           <div className="shipzy-table-scroll">
             <table>
               <thead>
@@ -1099,6 +1215,22 @@ function ShipzyRecord({
       setBusy(false);
     }
   }
+  async function generatePdf() {
+    setBusy(true);
+    setError('');
+    try {
+      await api(`operations/${r.kind}/${r.id}/pdf`, {
+        category: sales ? 'Customer invoice' : 'Customs document',
+      });
+      setTab('Documents');
+      setRevision((v) => v + 1);
+      refreshParent();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <section className="shipzy-panel shipzy-record">
       <header>
@@ -1130,6 +1262,11 @@ function ShipzyRecord({
               <DropdownMenuItem onClick={() => window.print()}>
                 Print / Save PDF
               </DropdownMenuItem>
+              {canWrite && (
+                <DropdownMenuItem onClick={generatePdf}>
+                  Generate PDF document
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setTab('Documents')}>
                 Upload / Download Documents
               </DropdownMenuItem>
