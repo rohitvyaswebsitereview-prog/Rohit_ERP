@@ -1,6 +1,7 @@
 'use client';
 import { Record360, ControlTower, DataDictionary } from './record-360';
 import Masters from './masters';
+import ShipzyWorkspace from './shipzy-workspace';
 import DocumentCenter from './document-center';
 import { DataViewProvider, DataViewSelect, useDataView } from './data-view';
 import {
@@ -328,7 +329,8 @@ export default function ERP() {
     <>
       {user ? (
         <DataViewProvider>
-          <Workspace
+          <ShipzyWorkspace
+            renderLegacy={(props) => <PageContent {...props} />}
             user={user}
             onLogout={() => {
               setUser(null);
@@ -913,6 +915,7 @@ function PageContent({
   go,
   user,
   canWrite,
+  shell,
   notifications,
   changeFy,
 }: any) {
@@ -1034,6 +1037,7 @@ function PageContent({
       <SalesDocuments
         key={operationKind}
         kind={operationKind}
+        presentation={shell}
         user={user}
         fy={fy}
         go={go}
@@ -1051,6 +1055,7 @@ function PageContent({
       <Operations
         key={operationKind}
         kind={operationKind}
+        presentation={shell}
         user={user}
         fy={fy}
         go={go}

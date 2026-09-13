@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './shipzy.css';
 export const metadata: Metadata = {
   title: "Rohit's ERP",
   description: 'Business operations, finance and export management.',

@@ -139,6 +139,7 @@ export default function Operations({
   go,
   initialId,
   refreshParent,
+  presentation,
 }: {
   kind: string;
   user: any;
@@ -146,6 +147,7 @@ export default function Operations({
   go: (r: string) => void;
   initialId?: string;
   refreshParent: () => void;
+  presentation?: string;
 }) {
   const { includes: includeData } = useDataView();
   const m = opMap[kind];
@@ -185,6 +187,18 @@ export default function Operations({
       edit();
     }
   }, [loading, canWrite, createdFromHeader]);
+  useEffect(() => {
+    if (
+      presentation === 'shipzy' &&
+      detail?.record &&
+      !detail.record.importLocked &&
+      !createdFromHeader &&
+      new URLSearchParams(window.location.search).get('edit') === '1'
+    ) {
+      setCreatedFromHeader(true);
+      edit(detail.record);
+    }
+  }, [detail, createdFromHeader, presentation]);
   const reload = () => {
     setRevision((n) => n + 1);
     refreshParent();
@@ -279,6 +293,11 @@ export default function Operations({
         `operations/${kind}${selected ? '/' + selected + '/save' : ''}`,
         { ...draft, version: record?.version },
       );
+      if (presentation === 'shipzy') {
+        refreshParent();
+        go(kind + '?record=' + encodeURIComponent(result.id));
+        return;
+      }
       setSelected(result.id);
       setEditing(false);
       setTab('Summary');

@@ -209,6 +209,7 @@ export default function SalesDocuments({
   go,
   initialId,
   refreshParent,
+  presentation,
 }: {
   kind: string;
   user: any;
@@ -216,6 +217,7 @@ export default function SalesDocuments({
   go: (r: string) => void;
   initialId?: string;
   refreshParent: () => void;
+  presentation?: string;
 }) {
   const { includes: includeData } = useDataView();
   const [records, setRecords] = useState<any[]>([]),
@@ -264,6 +266,18 @@ export default function SalesDocuments({
       begin();
     }
   }, [loading, canWrite, createdFromHeader]);
+  useEffect(() => {
+    if (
+      presentation === 'shipzy' &&
+      detail?.record &&
+      !detail.record.importLocked &&
+      !createdFromHeader &&
+      new URLSearchParams(window.location.search).get('edit') === '1'
+    ) {
+      setCreatedFromHeader(true);
+      begin(detail.record);
+    }
+  }, [detail, createdFromHeader, presentation]);
   const draftKey = kind + '-' + (selected || 'new');
   const queue = useRef(Promise.resolve());
   const formRef = useRef<any>(draft);
@@ -481,6 +495,11 @@ export default function SalesDocuments({
       await queue.current;
       await api('sales/draft/' + draftKey, { payload: null });
       setRecovery(null);
+      if (presentation === 'shipzy') {
+        refreshParent();
+        go(kind + '?record=' + encodeURIComponent(key));
+        return;
+      }
       setSelected(key);
       setEditing(false);
       setTab('Overview');
