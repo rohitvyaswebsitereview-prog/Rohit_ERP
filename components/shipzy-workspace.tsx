@@ -43,6 +43,7 @@ import {
 import { shipzyMenus, shipzyTitle } from '@/lib/shipzy-navigation';
 import { opMap, operationRoutes, permittedOperation } from '@/lib/operations';
 import { masterCategories } from '@/lib/masters';
+import { masterReadiness, activeMaster } from '@/lib/master-readiness';
 import { titles } from '@/lib/navigation';
 import { salesKinds, quoteStates } from '@/lib/sales-engine';
 import { financial360 } from '@/lib/financial-360';
@@ -363,6 +364,7 @@ export default function ShipzyWorkspace({
             <ShipzyDashboard records={records} fy={fy} go={go} />
           ) : ['masters', 'logistics-master'].includes(route) ? (
             <ShipzyMasters
+              records={records}
               role={user.role}
               go={go}
               logistics={route === 'logistics-master'}
@@ -1479,15 +1481,20 @@ function ShipzyRecord({
   );
 }
 export function ShipzyMasters({
+  records = [],
   role,
   go,
   logistics = false,
 }: {
+  records: any[];
   role: string;
   go: any;
   logistics?: boolean;
 }) {
   const [q, setQ] = useState('');
+  const [compact, setCompact] = useState(false);
+  const readiness = masterReadiness(records, role);
+  const completed = readiness.filter(item => item.ready).length;
   const all = masterCategories.flatMap((c) => c.items);
   const groups = [
     [
@@ -1503,6 +1510,7 @@ export function ShipzyMasters({
         'package-types',
         'packaging-materials',
         'quality-specifications',
+        'bom',
       ],
     ],
     [
@@ -1530,9 +1538,24 @@ export function ShipzyMasters({
       ],
     ],
   ] as [string, string[]][];
+  const managementItems = [
+    ['users', 'Users'], ['administration-permissions', 'User Roles'],
+    ['profile', 'My Profile'], ['settings', 'Settings'],
+    ['workbook-data', 'Import Data'], ['all-tools', 'Additional Modules'],
+  ].filter(([r, l]) => canOpenWorkspace(r, role) &&
+    (l + ' User Management').toLowerCase().includes(q.trim().toLowerCase()));
+  const hasMatches = groups.some(([title, keys]) => (!logistics || title === 'Logistics') &&
+    keys.some(k => {
+      const item = all.find(i => i.key === k);
+      return (item?.roles || opMap[k]?.roles || []).includes(role) &&
+        ((item?.label || opMap[k]?.label || label(k)) + ' ' + title).toLowerCase().includes(q.trim().toLowerCase());
+    })) || (!logistics && managementItems.length > 0);
   return (
     <>
       <div className="shipzy-catalog-search">
+        <Button variant="outline" aria-pressed={compact} onClick={() => setCompact(!compact)}>
+          {compact ? 'Comfortable view' : 'Compact view'}
+        </Button>
         <Input
           aria-label="Search settings"
           placeholder="Search master settings…"
@@ -1540,7 +1563,22 @@ export function ShipzyMasters({
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
-      <div className="shipzy-master-grid">
+      {!logistics && readiness.length > 0 && (
+        <section className="shipzy-setup" aria-label="Setup readiness">
+          <div><strong>Setup checklist</strong><span>{completed} of {readiness.length} ready</span></div>
+          <progress value={completed} max={readiness.length} aria-label="Setup completion" />
+          <p>Review these details before preparing transactions and documents.</p>
+          <div className="shipzy-setup-items">
+            {readiness.map(item => <button key={item.key} onClick={() => go(item.route)}>
+              <span>{item.label}</span>
+              <small className={item.ready ? 'ready' : ''}>{item.ready ? 'Ready' : item.missing.join(', ')}</small>
+              <ChevronRight size={16} />
+            </button>)}
+          </div>
+        </section>
+      )}
+      {!hasMatches && <p role="status">No settings match “{q}”. Try another name.</p>}
+      <div className={'shipzy-master-grid' + (compact ? ' compact' : '')}>
         {groups
           .filter(([title]) => !logistics || title === 'Logistics')
           .map(([title, keys]) => {
@@ -1559,7 +1597,7 @@ export function ShipzyMasters({
                   i.roles.includes(role) &&
                   (i.label + ' ' + title)
                     .toLowerCase()
-                    .includes(q.toLowerCase()),
+                    .includes(q.trim().toLowerCase()),
               );
             return items.length ? (
               <section key={title}>
@@ -1568,30 +1606,16 @@ export function ShipzyMasters({
                   <button key={i.key} onClick={() => go(i.route)}>
                     <FileText size={18} />
                     <span>{i.label}</span>
+                    <small className="shipzy-master-count">{records.filter(r => r.kind === i.route && activeMaster(r)).length}</small>
                   </button>
                 ))}
               </section>
             ) : null;
           })}
-        {!logistics && (
+        {!logistics && managementItems.length > 0 && (
           <section>
             <h2>User Management</h2>
-            {[
-              ['users', 'Users'],
-              ['administration-permissions', 'User Roles'],
-              ['profile', 'My Profile'],
-              ['settings', 'Settings'],
-              ['workbook-data', 'Import Data'],
-              ['all-tools', 'Additional Modules'],
-            ]
-              .filter(
-                ([r, l]) =>
-                  canOpenWorkspace(r, role) &&
-                  (l + ' User Management')
-                    .toLowerCase()
-                    .includes(q.toLowerCase()),
-              )
-              .map(([r, l]) => (
+            {managementItems.map(([r, l]) => (
                 <button key={r} onClick={() => go(r)}>
                   <UserRound size={18} />
                   <span>{l}</span>

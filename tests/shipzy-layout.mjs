@@ -12,6 +12,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import assert from 'node:assert/strict';
 import {shipzyMenus} from './lib/shipzy-navigation';
 import {opMap,operationRoutes} from './lib/operations';
+import {masterReadiness} from './lib/master-readiness';
 import {ShipzyRegister,ShipzyMasters} from './components/shipzy-workspace';
 let count=0;function check(label,fn){fn();count++;console.log('PASS '+label)}
 const custom=new Set(['dashboard','export-docs','pre-shipment','post-shipment','packing-drive','shipment-checklist','documents-drive','costing','reports','masters','logistics-master','profile','users','administration-permissions','receivables','payables','inventory-stock-register']);
@@ -24,6 +25,20 @@ check('Business text is escaped',()=>assert.ok(html.includes('Customer &lt;test&
 check('Product description is available directly in the list',()=>assert.ok(html.includes('Excavator')));
 check('Old process workspace does not render in the register',()=>{assert.ok(!html.includes('lifecycle-controller'));assert.ok(!html.includes('record-next-action'))});
 const master=renderToStaticMarkup(React.createElement(ShipzyMasters,{role:'Admin',go:()=>{}}));
+check('Catalog includes BOM and advisory setup progress',()=>{assert.ok(master.includes('BOM'));assert.ok(master.includes('Setup checklist'));assert.ok(master.includes('0 of 6 ready'))});
+check('Inactive master records do not satisfy setup',()=>{
+  const items=masterReadiness([{kind:'products',status:'Inactive'}], 'Admin');
+  assert.equal(items.find(i=>i.key==='products').ready,false);
+});
+check('Company readiness requires branding on one complete profile',()=>{
+  const items=masterReadiness([{kind:'master-company-information',name:'Exporter',address:'Office',email:'test@example.com'},
+    {kind:'master-company-information',logoDataUrl:'logo',signatureDataUrl:'signature',authorizedSignatory:'Owner'}], 'Admin');
+  assert.equal(items.find(i=>i.key==='company-information').ready,false);
+});
+check('Setup checklist respects role visibility',()=>{
+  assert.ok(!masterReadiness([], 'Logistics').some(i=>i.key==='company-information'));
+  assert.ok(!masterReadiness([], 'Finance').some(i=>i.key==='products'));
+});
 check('Master Settings follows the reference grouping',()=>{for(const t of ['Company &amp; Document Setup','Product &amp; Packaging','Trade &amp; Partners','Terms &amp; Templates','Licenses &amp; Compliance','User Management'])assert.ok(master.includes(t),t)});
 check('Bank and packaging masters remain reachable',()=>{assert.ok(master.includes('Bank Details'));assert.ok(master.includes('Packaging Materials'))});
 const viewer=renderToStaticMarkup(React.createElement(ShipzyRegister,{records:[r],fy:'2026–27',kind:'invoices',go:()=>{},user:{role:'Viewer'}}));
