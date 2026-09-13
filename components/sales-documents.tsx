@@ -1861,6 +1861,7 @@ export default function SalesDocuments({
                     setItem({
                       ...item,
                       productId: v,
+                      productMeasurements: p ? { netWeightKg: p.weight || '', grossWeightKg: p.grossWeight || '', volumeM3: p.volumeM3 ?? '' } : undefined,
                       description: p?.name || '',
                       rate: p?.defaultRate || '',
                       uom:
@@ -1886,6 +1887,9 @@ export default function SalesDocuments({
                   onChange={(v) => setItem({ ...item, description: v })}
                   required
                 />
+                {item.productMeasurements && <p className="sales-wide">
+                  Measurements per unit: net {item.productMeasurements.netWeightKg || '—'} kg · gross {item.productMeasurements.grossWeightKg || '—'} kg · volume {item.productMeasurements.volumeM3 === '' ? '—' : item.productMeasurements.volumeM3} m³.
+                </p>}
                 <ValueField
                   label="Quantity"
                   type="number"

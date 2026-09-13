@@ -569,8 +569,20 @@ export async function sales(
     ...d,
     lines: (b.lines || []).map((l: any) => {
       const t = find(l.taxCodeId);
+      const product = find(l.productId);
+      const previous = existing?.lines?.find((p: any) => p.productId === l.productId && p.productMeasurements);
+      const productMeasurements = previous?.productMeasurements || (product?.kind === 'products' ? {
+        netWeightKg: product.weight || '',
+        grossWeightKg: product.grossWeight || '',
+        lengthCm: product.lengthCm || '',
+        widthCm: product.widthCm || '',
+        heightCm: product.heightCm || '',
+        volumeM3: product.volumeM3 ?? '',
+        productTag: product.productTag || '',
+      } : undefined);
       return {
         ...l,
+        productMeasurements,
         gstRate: t?.gstRate || '0',
         tcsRate: t?.tcsRate || '0',
         tdsRate: t?.tdsRate || '0',

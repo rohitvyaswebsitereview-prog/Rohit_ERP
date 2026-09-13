@@ -1003,6 +1003,25 @@ try {
   );
   const salesId = r.data.id;
   let salesDetail = (await call('sales/quotations/' + salesId)).data;
+  const measurementQuote = await call('sales/quotations', { ...salesBase, lines: [{...salesBase.lines[0], productId: measuredProduct,
+    productMeasurements: { netWeightKg: '999' } }] });
+  assert.equal(measurementQuote.status, 201, JSON.stringify(measurementQuote.data));
+  let measurementRecord = (await call('sales/quotations/' + measurementQuote.data.id)).data.record;
+  check('Sales line snapshots authoritative product measurements', () => {
+    assert.equal(measurementRecord.lines[0].productMeasurements.netWeightKg, '100');
+    assert.equal(measurementRecord.lines[0].productMeasurements.volumeM3, 1);
+  });
+  const changedProduct = await call('operations/products/' + measuredProduct + '/save', {
+    ...measured, weight: '105', reason: 'Correct product weight',
+  });
+  assert.equal(changedProduct.status, 200, JSON.stringify(changedProduct.data));
+  const resavedMeasurement = await call('sales/quotations/' + measurementQuote.data.id, {
+    ...measurementRecord, reason: 'Review draft',
+  });
+  assert.equal(resavedMeasurement.status, 200, JSON.stringify(resavedMeasurement.data));
+  measurementRecord = (await call('sales/quotations/' + measurementQuote.data.id)).data.record;
+  check('Existing sales measurement snapshot survives product edits', () =>
+    assert.equal(measurementRecord.lines[0].productMeasurements.netWeightKg, '100'));
   check('Pricing uses tax master, discount and header charges', () => {
     assert.equal(salesDetail.record.amount, 11620);
     assert.equal(salesDetail.record.totals.cgst, 810);

@@ -424,11 +424,17 @@ export async function operations(
       existing.currency &&
         existing.amount &&
         `Amount: ${existing.currency} ${(existing.amount / 100).toFixed(2)}`,
-      ...(existing.lines || []).map(
+      ...(existing.lines || []).flatMap(
         (l: any, i: number) =>
-          `${i + 1}. ${l.description || l.productName || 'Item'} | Qty ${l.quantity || ''} ${l.uom || ''} | ${
+          [`${i + 1}. ${l.description || l.productName || 'Item'} | Qty ${l.quantity || ''} ${l.uom || ''} | ${
             existing.currency || ''
           } ${l.total === undefined ? '' : (l.total / 100).toFixed(2)}`,
+          ...(['netWeightKg', 'grossWeightKg', 'volumeM3'] as const).flatMap(key => {
+            const value = l.productMeasurements?.[key];
+            if (value === undefined || value === '') return [];
+            const name = { netWeightKg: 'Net weight (kg)', grossWeightKg: 'Gross weight (kg)', volumeM3: 'Volume (m3)' }[key];
+            return [`${name}: ${value} per unit; ${(Number(value) * Number(l.quantity || 0)).toFixed(6).replace(/\.?0+$/, '') || '0'} line total`];
+          })],
       ),
       existing.customsQuery && `Customs query: ${existing.customsQuery}`,
       existing.notes && `Notes: ${existing.notes}`,
