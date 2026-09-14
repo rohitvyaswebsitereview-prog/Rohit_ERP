@@ -536,14 +536,6 @@ function ShipzyDashboard({
         route: recordLink(r, 'Shipment Details'),
       })),
   ];
-  const orders = records
-    .filter(
-      (r) =>
-        ['invoices', 'proformas'].includes(r.kind) &&
-        r.fy === fy &&
-        !inactive(r),
-    )
-    .slice(0, 4);
   const products = records.filter((r) => r.kind === 'products');
   const selected = product;
   const months = Array.from({ length: 12 }, (_, i) => (i + 3) % 12);
@@ -579,52 +571,7 @@ function ShipzyDashboard({
           <div className="shipzy-all-clear">No overdue receivables or shipment ETA alerts for this view.</div>
         )}
       </section>
-      <section className="shipzy-panel">
-        <header>
-          <div>
-            <h2>Running Order Status</h2>
-            <span>Stage, owner and next action view</span>
-          </div>
-          <Button variant="outline" onClick={() => go('invoices')}>
-            View All
-          </Button>
-        </header>
-        <div className="shipzy-order-grid">
-          {orders.map((r) => (
-            <button key={r.id} onClick={() => go(recordLink(r))}>
-              <strong>{entityLabel(r)}</strong>
-              <span>
-                {r.customerName ||
-                  records.find((p) => p.id === r.partnerId)?.name ||
-                  '—'}
-              </span>
-              <small>{dateLabel(r.date)}</small>
-              <p>{r.sourceStatus || r.status}</p>
-              <div className="shipzy-mini-steps" aria-hidden="true">
-                {['PI', 'Docs', 'Ship', 'Pay'].map((s, i) => (
-                  <i
-                    key={s}
-                    className={
-                      i <
-                      (r.kind === 'proformas'
-                        ? 1
-                        : r.sourceStatus?.toLowerCase().includes('payment')
-                          ? 4
-                          : r.sourceStatus?.toLowerCase().includes('ship')
-                            ? 3
-                            : 2)
-                        ? 'done'
-                        : ''
-                    }
-                  >
-                    {s}
-                  </i>
-                ))}
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
+      <RunningOrders fy={fy} go={go} />
       <div className="shipzy-dashboard-grid">
         <section className="shipzy-panel">
           <header>
@@ -751,6 +698,43 @@ function ShipzyDashboard({
       </div>
     </>
   );
+}
+function RunningOrders({ fy, go }: { fy: string; go: any }) {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [table, setTable] = useState(false);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setRows(null); setError('');
+    api('relationships/workspace?view=All%20data&fy=' + encodeURIComponent(fy))
+      .then(data => { if (live) setRows(data); })
+      .catch(e => { if (live) setError(e.message); });
+    return () => { live = false; };
+  }, [fy, revision]);
+  useEffect(() => setPage(0), [fy, search]);
+  const active = (rows || []).filter(r => ['invoices', 'proformas', 'sales-orders'].includes(r.kind) &&
+    !['Completed', 'Closed', 'Cancelled', 'Rejected'].includes(r.status) &&
+    [r.reference, r.party, r.next?.owner, r.next?.action].join(' ').toLowerCase().includes(search.trim().toLowerCase()));
+  const shown = active.slice(page * 8, page * 8 + 8);
+  return <section className="shipzy-panel">
+    <header><h2>Running Order Status</h2><div>
+      <Button variant="outline" aria-pressed={table} onClick={() => setTable(v => !v)}>{table ? 'Card view' : 'Table view'}</Button>
+      <Button variant="outline" onClick={() => setRevision(v => v + 1)}>Refresh</Button>
+    </div></header>
+    <div className="shipzy-table-toolbar"><Input aria-label="Search running orders" placeholder="Order, customer or owner…" value={search} onChange={e => setSearch(e.target.value)} /></div>
+    {error ? <p className="error-box" role="alert">{error}</p> : rows === null ? <Loading /> : !active.length ? <Blank title="No running orders match this view" /> : table ?
+      <div className="shipzy-table-scroll"><table><thead><tr>{['Order', 'Customer', 'Stage', 'Owner', 'Next action', 'Due date'].map(h => <th key={h}>{h}</th>)}</tr></thead>
+        <tbody>{shown.map(r => <tr key={r.id}><td><button onClick={() => go(recordLink(r))}>{r.reference}</button></td><td>{r.party || '—'}</td><td>{r.next?.label || r.status}</td><td>{r.next?.owner || 'Unassigned'}</td><td>{r.next?.action || 'Review order'}</td><td>{r.next?.dueDate || 'Not set'}</td></tr>)}</tbody>
+      </table></div> : <div className="shipzy-order-grid">{shown.map(r => <button key={r.id} onClick={() => go(recordLink(r))}>
+        <strong>{r.reference}</strong><span>{r.party || '—'}</span>
+        <p>{r.next?.label || r.status}</p><span>Owner: {r.next?.owner || 'Unassigned'}</span><span>{r.next?.action || 'Review order'}</span><small>Due: {r.next?.dueDate || 'Not set'}</small>
+        <div className="shipzy-mini-steps">{(r.stages || []).map((s: any) => <i key={s.key} className={s.status === 'Completed' ? 'done' : ''} title={s.status}>{s.label}: {s.status}</i>)}</div>
+      </button>)}</div>}
+    {rows && !error && <footer><span>{active.length} running orders</span><div><Button variant="outline" disabled={!page} onClick={() => setPage(p => p - 1)}>Previous</Button><Button variant="outline" disabled={(page + 1) * 8 >= active.length} onClick={() => setPage(p => p + 1)}>Next</Button></div></footer>}
+  </section>;
 }
 export function ShipzyRegister({
   initialQuery = '',
