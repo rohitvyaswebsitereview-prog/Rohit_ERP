@@ -142,6 +142,43 @@ export async function operations(
       );
   const find = (id: string, k?: string) =>
     all.find((r: any) => r.id === id && (!k || r.kind === k));
+  if (kind === 'product-import' && req.method === 'POST') {
+    if (!permittedOperation(opMap.products, u.role, true)) return json({error:'Access denied.'},403);
+    if (!Array.isArray(b.rows) || !b.rows.length || b.rows.length > 200) throw new Error('Import between 1 and 200 rows.');
+    const errors: any[] = [], prepared: any[] = [], seen = new Set<string>();
+    for (const [index, input] of b.rows.entries()) {
+      try {
+        const data: any = {};
+        for (const f of opMap.products.fields) {
+          const value = clean(input[f.key], f.type === 'textarea' ? 12000 : 500);
+          if (f.required && !value) throw new Error(f.label + ' is required.');
+          if (value && f.type === 'number' && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 1e11)) throw new Error(f.label + ' must be a non-negative number.');
+          if (value && f.source && !all.some((r: any) => r.kind === f.source && r.id === value && r.status === 'Active')) throw new Error('Select an active ' + f.label + '.');
+          data[f.key] = value;
+        }
+        if (data.grossWeight && data.weight && Number(data.grossWeight) < Number(data.weight)) throw new Error('Gross weight is below net weight.');
+        if (Number(data.gstRate) > 100) throw new Error('GST cannot exceed 100.');
+        const dims = [data.lengthCm,data.widthCm,data.heightCm];
+        if (dims.some(Boolean) && !dims.every(Boolean)) throw new Error('Enter all three dimensions.');
+        data.volumeM3 = dims.every(Boolean) ? Number((dims.reduce((s,v)=>s*Number(v),1)/1000000).toPrecision(12)) : '';
+        const sku = data.sku.toLowerCase();
+        if (seen.has(sku)) throw new Error('Duplicate SKU in CSV.');
+        seen.add(sku);
+        const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(u.tenant_id + ':' + sku)))).map(x=>x.toString(16).padStart(2,'0')).join('');
+        const id = 'product-csv-' + digest;
+        const previous = all.find((r:any)=>r.kind==='products' && String(r.sku).trim().toLowerCase()===sku);
+        if (previous && (previous.id !== id || Object.keys(data).some(k=>String(previous[k] ?? '')!==String(data[k] ?? '')))) throw new Error('SKU already exists with different data. Edit that product separately.');
+        prepared.push({ id, data, exists:!!previous });
+      } catch(e:any) { errors.push({row:index+2,error:e.message}); }
+    }
+    if (errors.length || b.preview) return json({errors, valid:prepared.length, existing:prepared.filter(p=>p.exists).length}, errors.length ? 400 : 200);
+    const fresh = prepared.filter(p=>!p.exists);
+    if (fresh.length) await db.batch(fresh.flatMap(p=>[
+      saveNew('products',{...p.data,status:'Active',operation:true,createdBy:u.name,updatedBy:u.name,updatedAt:today()},p.id),
+      event('CSV imported','products',p.id,{sku:p.data.sku}),
+    ]));
+    return json({imported:fresh.length,existing:prepared.length-fresh.length},201);
+  }
   if (kind === 'stock' && req.method === 'GET') {
     if (!['Admin', 'Finance', 'Viewer', 'Logistics'].includes(u.role))
       return json({ error: 'Access denied.' }, 403);

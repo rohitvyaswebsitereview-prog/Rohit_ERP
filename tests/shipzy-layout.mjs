@@ -16,8 +16,14 @@ import {masterReadiness} from './lib/master-readiness';
 import {receivableAgeing} from './lib/receivable-ageing';
 import {productSalesTotal,productSalesMatches} from './lib/product-sales';
 import {filterDocuments} from './lib/document-list';
+import {parseProductCSV} from './lib/product-csv';
 import {ShipzyRegister,ShipzyMasters,ShipzyPayments} from './components/shipzy-workspace';
 let count=0;function check(label,fn){fn();count++;console.log('PASS '+label)}
+check('CSV parser handles quoted commas, escaped quotes and rejects broken rows',()=>{
+  assert.deepEqual(parseProductCSV('name,sku'+String.fromCharCode(10)+'"Pump, large",SKU-1'),[['name','sku'],['Pump, large','SKU-1']]);
+  assert.throws(()=>parseProductCSV('name,sku'+String.fromCharCode(10)+'Pump'));
+  assert.throws(()=>parseProductCSV('name,name'+String.fromCharCode(10)+'Pump,A'));
+});
 check('Document filters preserve history and isolate latest versions per record/category',()=>{
   const files=[{id:'old',entityId:'a',category:'Invoice',documentVersion:1,filename:'old.pdf'},
     {id:'new',entityId:'a',category:'Invoice',documentVersion:2,filename:'new.pdf'},

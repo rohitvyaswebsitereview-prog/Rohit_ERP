@@ -434,6 +434,19 @@ try {
     assert.equal(r.status, 201, JSON.stringify(r.data));
     return r.data.id;
   }
+  const importRows = [{name:'CSV Product',sku:'CSV-001',weight:'10',grossWeight:'12'}];
+  let imported = await call('operations/product-import',{rows:importRows,preview:true});
+  check('Product import validates without creating records',()=>{assert.equal(imported.status,200);assert.equal(imported.data.valid,1);});
+  imported=await call('operations/product-import',{rows:[...importRows,{name:'Invalid',sku:''}]});
+  check('One invalid row rejects the full product import',()=>{assert.equal(imported.status,400);assert.equal(imported.data.errors[0].row,3);});
+  imported=await call('operations/product-import',{rows:importRows});
+  check('Validated product import commits once',()=>{assert.equal(imported.status,201,JSON.stringify(imported.data));assert.equal(imported.data.imported,1);});
+  imported=await call('operations/product-import',{rows:importRows});
+  check('Product import retry does not duplicate products',()=>{assert.equal(imported.status,201);assert.equal(imported.data.imported,0);assert.equal(imported.data.existing,1);});
+  imported=await call('operations/product-import',{rows:[{...importRows[0],weight:'11'}]});
+  check('Product import cannot overwrite existing SKU data',()=>assert.equal(imported.status,400));
+  imported=await call('operations/product-import',{rows:importRows},viewerCookie);
+  check('Viewer cannot import products',()=>assert.equal(imported.status,403));
   async function opGet(kind, id) {
     const r = await call(`operations/${kind}/${id}`);
     assert.equal(r.status, 200, JSON.stringify(r.data));

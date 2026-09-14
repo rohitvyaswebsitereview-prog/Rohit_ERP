@@ -1145,3 +1145,7 @@
   display: none;
 }
 .activity-metadata { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; padding: 12px; background: #f5f7fa; font-size: 13px; }
+.product-import-dialog { max-width: 900px; max-height: 90vh; overflow-y: auto; }
+.product-import-mapping { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 12px; }
+.product-import-mapping label { display: flex; flex-direction: column; gap: 5px; font-size: 14px; }
+.product-import-mapping select { border: 1px solid #d7dfe5; padding: 8px; border-radius: 4px; }

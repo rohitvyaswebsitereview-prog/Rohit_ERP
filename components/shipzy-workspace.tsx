@@ -54,6 +54,7 @@ import { canOpenWorkspace } from '@/lib/workspace-navigation';
 import { useDataView } from './data-view';
 import { Documents } from './operations';
 import { DocumentActivity } from './document-activity';
+import { ProductImport } from './product-import';
 import { reportRoutes } from './operation-reports';
 const recordLink = (r: any, tab = 'General') =>
   r.kind +
@@ -849,6 +850,7 @@ export function ShipzyRegister({
             {permittedOperation(m, user.role, true) && (
               <Button onClick={() => go(kind + '?create=1')}>Add New</Button>
             )}
+            {products && permittedOperation(m, user.role, true) && <ProductImport records={records} />}
             <Button
               variant="outline"
               onClick={() =>
