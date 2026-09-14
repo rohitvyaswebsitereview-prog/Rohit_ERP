@@ -53,6 +53,7 @@ import { entityLabel, inactive } from '@/lib/relationships';
 import { canOpenWorkspace } from '@/lib/workspace-navigation';
 import { useDataView } from './data-view';
 import { Documents } from './operations';
+import { DocumentActivity } from './document-activity';
 import { reportRoutes } from './operation-reports';
 const recordLink = (r: any, tab = 'General') =>
   r.kind +
@@ -1370,33 +1371,7 @@ function ShipzyRecord({
         </div>
       )}
       {tab === 'Activity' && (
-        <div className="shipzy-audit">
-          {(data.timeline || []).map((a: any, i: number) => (
-            <article key={a.id || i}>
-              <i />
-              <div>
-                <strong>
-                  {a.event ||
-                    a.action ||
-                    a.title ||
-                    a.label ||
-                    'Record activity'}
-                </strong>
-                <p>{a.reference || a.name || a.description || ''}</p>
-                <small>{a.date || a.created}</small>
-              </div>
-            </article>
-          ))}
-          {!data.timeline?.length && <Blank title="No recorded activity" />}
-          <details>
-            <summary>Audit history</summary>
-            {data.audit.map((a: any) => (
-              <p key={a.id}>
-                {a.action} · {a.actor || 'System'} · {a.created}
-              </p>
-            ))}
-          </details>
-        </div>
+        <DocumentActivity data={data} go={go} />
       )}
       <footer>
         <span>

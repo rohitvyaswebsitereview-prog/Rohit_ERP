@@ -1144,3 +1144,4 @@
 .shipzy-app .sales-register-header {
   display: none;
 }
+.activity-metadata { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; padding: 12px; background: #f5f7fa; font-size: 13px; }
