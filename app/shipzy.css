@@ -1149,3 +1149,10 @@
 .product-import-mapping { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 12px; }
 .product-import-mapping label { display: flex; flex-direction: column; gap: 5px; font-size: 14px; }
 .product-import-mapping select { border: 1px solid #d7dfe5; padding: 8px; border-radius: 4px; }
+.shipment-timeline { margin: 18px; padding: 16px; }
+.shipment-timeline ol { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 16px; padding: 16px 0; list-style: none; }
+.shipment-timeline li { display: flex; flex-direction: column; gap: 8px; border-top: 4px solid #c6d0db; padding-top: 12px; }
+.shipment-timeline li.complete { border-color: #2f865d; }
+.shipment-timeline li.overdue { border-color: #b9761c; }
+.shipment-timeline small, .shipment-timeline p { font-size: 14px; }
+.shipment-stale { color: #8a5312; }

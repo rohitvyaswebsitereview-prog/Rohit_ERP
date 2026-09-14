@@ -1536,6 +1536,13 @@ export async function operations(
   }
   if (data.dueDate && data.dueDate < data.date)
     throw new Error('Due date cannot precede the document date.');
+  if (kind === 'shipments') {
+    if (data.etd && data.eta && data.eta < data.etd) throw new Error('ETA cannot precede ETD.');
+    if (data.arrivalDate && !data.departureDate) throw new Error('Record actual departure before actual arrival.');
+    if (data.departureDate && data.arrivalDate && data.arrivalDate < data.departureDate) throw new Error('Actual arrival cannot precede departure.');
+    if (data.deliveredDate && !data.arrivalDate) throw new Error('Record actual arrival before delivery.');
+    if (data.arrivalDate && data.deliveredDate && data.deliveredDate < data.arrivalDate) throw new Error('Delivery cannot precede arrival.');
+  }
   if (kind === 'approvals') {
     const source = find(data.sourceId);
     if (!source || !opMap[source.kind]?.posting)

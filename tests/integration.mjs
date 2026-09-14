@@ -501,6 +501,16 @@ try {
     name: 'Lathe',
     sku: 'LATHE-1',
   });
+  for (const fields of [
+    {etd:'2026-09-10',eta:'2026-09-01'},
+    {arrivalDate:'2026-09-10'},
+    {departureDate:'2026-09-10',arrivalDate:'2026-09-09'},
+    {departureDate:'2026-09-01',arrivalDate:'2026-09-10',deliveredDate:'2026-09-09'},
+  ]) {
+    const invalid = await call('operations/shipments',{reference:'INVALID-SHIP',date:'2026-09-01',currencyId,...fields});
+    check('Invalid shipment milestone sequence is rejected '+JSON.stringify(fields),()=>assert.equal(invalid.status,400));
+  }
+  await opCreate('shipments',{reference:'VALID-SHIP',date:'2026-09-01',currencyId,departureDate:'2026-09-02',arrivalDate:'2026-09-05',deliveredDate:'2026-09-06',trackingSource:'Carrier advice',trackingUpdatedDate:'2026-09-06'});
   const tinyPng =
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/atX7V8AAAAASUVORK5CYII=';
   const company = await opCreate('master-company-information', {

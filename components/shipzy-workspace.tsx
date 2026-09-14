@@ -55,6 +55,7 @@ import { useDataView } from './data-view';
 import { Documents } from './operations';
 import { DocumentActivity } from './document-activity';
 import { ProductImport } from './product-import';
+import { ShipmentTimeline } from './shipment-timeline';
 import { reportRoutes } from './operation-reports';
 const recordLink = (r: any, tab = 'General') =>
   r.kind +
@@ -1171,7 +1172,7 @@ function ShipzyRecord({
       k,
     )
       ? 'Commercial Details'
-      : /port|ship|consign|notify|vessel|container|etd|eta|country|destination|delivery|transport/i.test(
+      : /port|ship|consign|notify|vessel|voyage|container|etd|eta|country|destination|delivery|delivered|departure|arrival|tracking|location|transport/i.test(
             k,
           )
         ? 'Shipment Details'
@@ -1303,6 +1304,7 @@ function ShipzyRecord({
           </button>
         ))}
       </nav>
+      {tab === 'Shipment Details' && r.kind === 'shipments' && <ShipmentTimeline record={r} />}
       {['General', 'Commercial Details', 'Shipment Details'].includes(tab) && (
         <div className="shipzy-form-grid">
           {tab === 'General' && r.partnerId && (

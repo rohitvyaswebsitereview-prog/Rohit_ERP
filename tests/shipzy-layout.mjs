@@ -17,8 +17,16 @@ import {receivableAgeing} from './lib/receivable-ageing';
 import {productSalesTotal,productSalesMatches} from './lib/product-sales';
 import {filterDocuments} from './lib/document-list';
 import {parseProductCSV} from './lib/product-csv';
+import {ShipmentTimeline} from './components/shipment-timeline';
 import {ShipzyRegister,ShipzyMasters,ShipzyPayments} from './components/shipzy-workspace';
 let count=0;function check(label,fn){fn();count++;console.log('PASS '+label)}
+check('Shipment timeline distinguishes expected dates from actual events',()=>{
+  const timeline=renderToStaticMarkup(React.createElement(ShipmentTimeline,{record:{etd:'2020-01-01',eta:'2020-02-01',departureDate:'2020-01-02'}}));
+  assert.ok(timeline.includes('Actual: 2020-01-02'));
+  assert.ok(timeline.includes('Expected: 2020-02-01'));
+  assert.ok(timeline.includes('confirm actual milestone'));
+  assert.ok(timeline.includes('not live carrier positions'));
+});
 check('CSV parser handles quoted commas, escaped quotes and rejects broken rows',()=>{
   assert.deepEqual(parseProductCSV('name,sku'+String.fromCharCode(10)+'"Pump, large",SKU-1'),[['name','sku'],['Pump, large','SKU-1']]);
   assert.throws(()=>parseProductCSV('name,sku'+String.fromCharCode(10)+'Pump'));
