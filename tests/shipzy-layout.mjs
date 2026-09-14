@@ -39,6 +39,12 @@ check('Ageing boundaries use due date rather than invoice date',()=>{
 const custom=new Set(['dashboard','export-docs','pre-shipment','post-shipment','packing-drive','shipment-checklist','documents-drive','costing','reports','masters','logistics-master','profile','users','administration-permissions','receivables','payables','inventory-stock-register']);
 check('Every sidebar destination resolves to a working screen',()=>{for(const menu of shipzyMenus)for(const r of menu.children?menu.children.map(c=>c[0]):[menu.route])assert.ok(opMap[operationRoutes[r]||r]||custom.has(r),'Missing '+r)});
 const r={id:'i',kind:'invoices',reference:'INV-TEST',fy:'2026–27',date:'2026-04-01',status:'Imported',importLocked:true,customerName:'Customer <test>',currency:'INR',amount:118000,lines:[{description:'Excavator',quantity:1,uom:'NOS'}]};
+check('Payment creation controls respect user roles',()=>{
+  const render=role=>renderToStaticMarkup(React.createElement(ShipzyPayments,{records:[r],fy:r.fy,go:()=>{},role}));
+  assert.ok(!render('Viewer').includes('Add Receipt'));
+  assert.ok(render('Finance').includes('Add Receipt'));
+  assert.ok(!render('Logistics').includes('Add Receipt'));
+});
 check('Product chart totals isolate currency, product, month and posted status',()=>{
   const match={...r,lines:[{productId:'p1',total:12000},{productId:'p2',total:5000}]};
   const data=[match,{...match,status:'Draft'},{...match,currency:'USD'},{...match,date:'2026-05-01'},{...match,status:'Cancelled'}];

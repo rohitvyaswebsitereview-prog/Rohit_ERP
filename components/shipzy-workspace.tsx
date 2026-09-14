@@ -382,6 +382,7 @@ export default function ShipzyWorkspace({
             <ShipzyDrive records={records} fy={fy} go={go} route={route} />
           ) : ['receivables', 'payables'].includes(route) ? (
             <ShipzyPayments
+              role={user.role}
               key={route + query}
               initialQuery={query}
               records={records}
@@ -1807,12 +1808,14 @@ function ShipzyChecklist({ fy, go }: { fy: string; go: any }) {
   );
 }
 export function ShipzyPayments({
+  role = 'Viewer',
   initialQuery = '',
   records,
   fy,
   go,
   payable = false,
 }: {
+  role?: string;
   initialQuery?: string;
   records: any[];
   fy: string;
@@ -1820,19 +1823,31 @@ export function ShipzyPayments({
   payable?: boolean;
 }) {
   const initial = new URLSearchParams(initialQuery);
+  const [partner, setPartner] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const partnerKind = payable ? 'vendors' : 'customers';
+  const allowedWrite = permittedOperation(opMap[payable ? 'payments' : 'receipts'], role, true);
+  const invalidRange = !!from && !!to && from > to;
+  const matchesHeader = (r: any) => {
+    const original = records.find(x => x.id === r.id) || r;
+    return !invalidRange && (!partner || original.partnerId === partner) &&
+      (!from || r.date >= from) && (!to || r.date <= to);
+  };
   const [ageing, setAgeing] = useState(ageingBuckets.includes(initial.get('ageing') || '') ? initial.get('ageing')! : ''),
     [outstanding, setOutstanding] = useState(initial.get('outstanding') === '1');
   const [tab, setTab] = useState('All'),
     [currency, setCurrency] = useState(initial.get('currency') || (payable ? 'INR' : 'USD')),
     [q, setQ] = useState(initial.get('q') || ''),
     [page, setPage] = useState(0);
-  useEffect(() => setPage(0), [tab, currency, q, fy, ageing, outstanding]);
+  useEffect(() => setPage(0), [tab, currency, q, fy, ageing, outstanding, partner, from, to]);
   const status = (r: any) =>
     r.balance <= 0 ? 'Paid' : r.settled > 0 ? 'Partially Paid' : 'Unpaid';
   const rows = financial360(records, fy).lines.filter(
     (r) =>
       r.fy === fy &&
       r.type === (payable ? 'Payable' : 'Receivable') &&
+      matchesHeader(r) &&
       (!outstanding || r.balance > 0) &&
       (!ageing || receivableAgeing(records.find(inv => inv.id === r.id)?.dueDate) === ageing) &&
       r.currency === currency &&
@@ -1845,6 +1860,7 @@ export function ShipzyPayments({
       r.fy === fy &&
       !inactive(r) &&
       r.currency === currency &&
+      matchesHeader(r) &&
       JSON.stringify(r).toLowerCase().includes(q.toLowerCase()),
   );
   const shown = tab === 'Advance Payment' ? advances : rows;
@@ -1864,11 +1880,14 @@ export function ShipzyPayments({
         )}
       </nav>
       <div className="shipzy-table-toolbar">
-        <label>Ageing <select aria-label="Ageing range" value={ageing} onChange={e => setAgeing(e.target.value)}>
+        <label>{payable ? 'Supplier' : 'Customer'} <select value={partner} onChange={e => setPartner(e.target.value)}><option value="">All</option>{records.filter(r => r.kind === partnerKind).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
+        <label>From <Input type="date" value={from} onChange={e => setFrom(e.target.value)} /></label>
+        <label>To <Input type="date" value={to} onChange={e => setTo(e.target.value)} /></label>
+        <label>Ageing <select disabled={tab === 'Advance Payment'} aria-label="Ageing range" value={ageing} onChange={e => setAgeing(e.target.value)}>
           <option value="">All due dates</option>
           {ageingBuckets.map(b => <option key={b}>{b}</option>)}
         </select></label>
-        <label><input type="checkbox" checked={outstanding} onChange={e => setOutstanding(e.target.checked)} /> Outstanding only</label>
+        <label><input type="checkbox" disabled={tab === 'Advance Payment'} checked={outstanding} onChange={e => setOutstanding(e.target.checked)} /> Outstanding only</label>
         <label>
           Currency{' '}
           <select
@@ -1890,13 +1909,13 @@ export function ShipzyPayments({
           <label>
             Search: <Input value={q} onChange={(e) => setQ(e.target.value)} />
           </label>
-          <Button
+          {allowedWrite && <Button
             onClick={() =>
               go((payable ? 'payments' : 'receipts') + '?create=1')
             }
           >
-            Add Payment
-          </Button>
+            {payable ? 'Add Payment' : 'Add Receipt'}
+          </Button>}
           <Button
             variant="outline"
             onClick={() =>
@@ -1916,6 +1935,12 @@ export function ShipzyPayments({
           </Button>
         </div>
       </div>
+      {invalidRange && <p className="error-box" role="alert">The end date must be on or after the start date.</p>}
+      <div className="shipzy-totals">
+        <div><span>{tab === 'Advance Payment' ? 'Advance amount' : 'Invoice amount'} · {currency}</span><strong>{money(shown.reduce((sum, r) => sum + Number(r.amount || 0), 0), currency)}</strong></div>
+        {tab !== 'Advance Payment' && <><div><span>{payable ? 'Paid' : 'Received'} · {currency}</span><strong>{money(shown.reduce((sum, r) => sum + Number(r.settled || 0), 0), currency)}</strong></div><div><span>Balance due · {currency}</span><strong>{money(shown.reduce((sum, r) => sum + Number(r.balance || 0), 0), currency)}</strong></div></>}
+      </div>
+      <p className="shipzy-muted">Totals for the filtered records · As of {new Date().toLocaleString('en-IN')}</p>
       <div className="shipzy-table-scroll">
         <table>
           <thead>
@@ -1936,14 +1961,14 @@ export function ShipzyPayments({
               return (
                 <tr key={r.id}>
                   <td>
-                    <Button
-                      className="shipzy-action"
-                      onClick={() =>
-                        go(recordLink(invoice, 'Commercial Details'))
-                      }
-                    >
-                      Action <ChevronRight size={13} />
-                    </Button>
+                    <DropdownMenu><DropdownMenuTrigger render={<Button className="shipzy-action" />}>Action <ChevronDown size={13} /></DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem onClick={() => go(recordLink(invoice))}>Open record</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => go(recordLink(invoice, 'Commercial Details'))}>Payment details</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => go(recordLink(invoice, 'Documents'))}>Documents</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => go(recordLink(invoice, 'Activity'))}>Activity</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                   <td>
                     <button onClick={() => go(recordLink(invoice))}>
