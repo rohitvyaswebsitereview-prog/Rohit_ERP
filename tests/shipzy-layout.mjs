@@ -39,6 +39,15 @@ check('Ageing boundaries use due date rather than invoice date',()=>{
 const custom=new Set(['dashboard','export-docs','pre-shipment','post-shipment','packing-drive','shipment-checklist','documents-drive','costing','reports','masters','logistics-master','profile','users','administration-permissions','receivables','payables','inventory-stock-register']);
 check('Every sidebar destination resolves to a working screen',()=>{for(const menu of shipzyMenus)for(const r of menu.children?menu.children.map(c=>c[0]):[menu.route])assert.ok(opMap[operationRoutes[r]||r]||custom.has(r),'Missing '+r)});
 const r={id:'i',kind:'invoices',reference:'INV-TEST',fy:'2026–27',date:'2026-04-01',status:'Imported',importLocked:true,customerName:'Customer <test>',currency:'INR',amount:118000,lines:[{description:'Excavator',quantity:1,uom:'NOS'}]};
+check('Product register sorts the full result before pagination and shows identifying fields',()=>{
+  const records=Array.from({length:12},(_,i)=>({id:'p'+i,kind:'products',name:'Model '+(12-i),sku:'SKU-'+(12-i),status:'Active',unitId:'unit'}));
+  records.push({id:'unit',kind:'master-units',code:'PCS'});
+  const productPage=renderToStaticMarkup(React.createElement(ShipzyRegister,{records,fy:r.fy,kind:'products',go:()=>{},user:{role:'Admin'}}));
+  assert.ok(productPage.includes('SKU-1'));
+  assert.ok(!productPage.includes('SKU-12'));
+  assert.ok(productPage.indexOf('SKU-2')<productPage.indexOf('SKU-10'));
+  for(const label of ['PCS','LAST UPDATED','Show measurements'])assert.ok(productPage.includes(label));
+});
 check('Payment creation controls respect user roles',()=>{
   const render=role=>renderToStaticMarkup(React.createElement(ShipzyPayments,{records:[r],fy:r.fy,go:()=>{},role}));
   assert.ok(!render('Viewer').includes('Add Receipt'));

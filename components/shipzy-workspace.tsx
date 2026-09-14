@@ -758,6 +758,9 @@ export function ShipzyRegister({
     [size, setSize] = useState(10),
     [page, setPage] = useState(0);
   const filters = new URLSearchParams(initialQuery);
+  const [sortKey, setSortKey] = useState('name');
+  const [descending, setDescending] = useState(false);
+  const [measurements, setMeasurements] = useState(false);
   const fromChart = filters.get('salesChart') === '1';
   const m = opMap[kind],
     master = !!m.master,
@@ -773,8 +776,9 @@ export function ShipzyRegister({
           (status === 'Completed' &&
             ['Completed', 'Closed'].includes(r.status)) ||
           r.status === status),
-    );
-  useEffect(() => setPage(0), [q, status, size]);
+    ).sort((a, b) => kind === 'products' ?
+      (descending ? -1 : 1) * (String(a[sortKey] || '').localeCompare(String(b[sortKey] || ''), undefined, { numeric: true, sensitivity: 'base' }) || String(a.id).localeCompare(String(b.id))) : 0);
+  useEffect(() => setPage(0), [q, status, size, sortKey, descending]);
   const sales = salesKinds.includes(kind),
     products = kind === 'products',
     parties = ['customers', 'vendors'].includes(kind);
@@ -815,6 +819,12 @@ export function ShipzyRegister({
           </nav>
         )}
         <div className="shipzy-table-toolbar">
+          {products && <div>
+            <label>Sort by <select value={sortKey} onChange={e => setSortKey(e.target.value)}>{[['name', 'Product name'], ['sku', 'SKU'], ['hsn', 'HSN'], ['updatedAt', 'Last updated']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+            <Button variant="outline" onClick={() => setDescending(v => !v)}>{descending ? 'Descending' : 'Ascending'}</Button>
+            <label>Status <select value={status} onChange={e => setStatus(e.target.value)}><option>All</option>{[...new Set(records.filter(r => r.kind === kind).map(r => r.status).filter(Boolean))].map(s => <option key={s}>{s}</option>)}</select></label>
+            <label><input type="checkbox" checked={measurements} onChange={e => setMeasurements(e.target.checked)} /> Show measurements</label>
+          </div>}
           <label>
             Show{' '}
             <select
@@ -843,7 +853,12 @@ export function ShipzyRegister({
               variant="outline"
               onClick={() =>
                 exportCSV(
-                  rows.map((r) => ({
+                  rows.map((r) => products ? ({
+                    name: r.name, sku: r.sku, hsn: r.hsn, productTag: r.productTag,
+                    unit: records.find(u => u.id === r.unitId)?.code || r.unit || '',
+                    netWeightKg: r.weight, grossWeightKg: r.grossWeight, volumeM3: r.volumeM3,
+                    defaultRate: r.defaultRate, gstRate: r.gstRate, status: r.status, updatedAt: r.updatedAt,
+                  }) : ({
                     reference: entityLabel(r),
                     date: r.date,
                     status: r.status,
@@ -884,9 +899,13 @@ export function ShipzyRegister({
                   </>
                 ) : products ? (
                   <>
+                    <th>SKU</th>
+                    <th>UNIT</th>
                     <th>HSN / SAC</th>
                     <th>GST</th>
                     <th>DESCRIPTION</th>
+                    {measurements && <><th>NET KG / UNIT</th><th>GROSS KG / UNIT</th><th>M³ / UNIT</th></>}
+                    <th>LAST UPDATED</th>
                   </>
                 ) : parties ? (
                   <>
@@ -995,11 +1014,15 @@ export function ShipzyRegister({
                     </>
                   ) : products ? (
                     <>
+                      <td>{r.sku || '—'}{r.productTag && <small> · {r.productTag}</small>}</td>
+                      <td>{records.find(u => u.id === r.unitId)?.code || r.unit || '—'}</td>
                       <td>{r.hsn || '—'}</td>
                       <td>{r.gstRate ?? '—'}</td>
                       <td className="shipzy-description">
                         {r.specification || r.description || '—'}
                       </td>
+                      {measurements && <><td>{r.weight ?? '—'}</td><td>{r.grossWeight ?? '—'}</td><td>{r.volumeM3 ?? '—'}</td></>}
+                      <td>{r.updatedAt || r.created || '—'}</td>
                     </>
                   ) : parties ? (
                     <>
