@@ -18,8 +18,17 @@ import {productSalesTotal,productSalesMatches} from './lib/product-sales';
 import {filterDocuments} from './lib/document-list';
 import {parseProductCSV} from './lib/product-csv';
 import {ShipmentTimeline} from './components/shipment-timeline';
+import {shipmentAlerts} from './lib/shipment-alerts';
 import {ShipzyRegister,ShipzyMasters,ShipzyPayments} from './components/shipzy-workspace';
 let count=0;function check(label,fn){fn();count++;console.log('PASS '+label)}
+check('Shipment alerts clear confirmed milestones and include missed departures',()=>{
+  const shipment={id:'s',kind:'shipments',fy:'2026–27',reference:'SHIP',status:'Active',etd:'2026-04-01',eta:'2026-04-10'};
+  assert.equal(shipmentAlerts([shipment],shipment.fy,'2026-05-01').length,2);
+  assert.equal(shipmentAlerts([{...shipment,departureDate:'2026-04-02'}],shipment.fy,'2026-05-01')[0].id,'eta-s');
+  assert.equal(shipmentAlerts([{...shipment,departureDate:'2026-04-02',arrivalDate:'2026-04-11'}],shipment.fy,'2026-05-01').length,0);
+  assert.equal(shipmentAlerts([{...shipment,status:'Completed'}],shipment.fy,'2026-05-01').length,0);
+  assert.equal(shipmentAlerts([shipment],'2025–26','2026-05-01').length,0);
+});
 check('Shipment timeline distinguishes expected dates from actual events',()=>{
   const timeline=renderToStaticMarkup(React.createElement(ShipmentTimeline,{record:{etd:'2020-01-01',eta:'2020-02-01',departureDate:'2020-01-02'}}));
   assert.ok(timeline.includes('Actual: 2020-01-02'));

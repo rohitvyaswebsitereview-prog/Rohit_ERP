@@ -56,6 +56,7 @@ import { Documents } from './operations';
 import { DocumentActivity } from './document-activity';
 import { ProductImport } from './product-import';
 import { ShipmentTimeline } from './shipment-timeline';
+import { shipmentAlerts } from '@/lib/shipment-alerts';
 import { reportRoutes } from './operation-reports';
 const recordLink = (r: any, tab = 'General') =>
   r.kind +
@@ -489,6 +490,7 @@ function ShipzyDashboard({
 }) {
   const [q, setQ] = useState(''),
     [product, setProduct] = useState(''),
+    [allAlerts, setAllAlerts] = useState(false),
     [salesCurrency, setSalesCurrency] = useState('INR'),
     [currency, setCurrency] = useState('USD');
   const balances = financial360(records, fy).lines.filter(
@@ -514,7 +516,6 @@ function ShipzyDashboard({
   const alerts = [
     ...balances
       .filter((r) => !['Current', 'No due date'].includes(bucket(r)))
-      .slice(0, 4)
       .map((r) => ({
         id: 'due-' + r.id,
         severity: bucket(r) === '90+' ? 'Critical' : 'Warning',
@@ -522,23 +523,7 @@ function ShipzyDashboard({
         detail: money(r.balance, r.currency) + ' pending · ' + bucket(r) + ' days',
         route: 'invoices?record=' + encodeURIComponent(r.id),
       })),
-    ...records
-      .filter(
-        (r) =>
-          ['shipments', 'bills-of-lading'].includes(r.kind) &&
-          r.fy === fy &&
-          !inactive(r) &&
-          r.eta &&
-          r.eta < todayIso,
-      )
-      .slice(0, 3)
-      .map((r) => ({
-        id: 'eta-' + r.id,
-        severity: 'Attention',
-        title: entityLabel(r) + ' ETA needs review',
-        detail: 'ETA ' + dateLabel(r.eta),
-        route: recordLink(r, 'Shipment Details'),
-      })),
+    ...shipmentAlerts(records, fy, todayIso),
   ];
   const products = records.filter((r) => r.kind === 'products');
   const selected = product;
@@ -551,7 +536,7 @@ function ShipzyDashboard({
       <section className="shipzy-panel shipzy-alert-center">
         <header>
           <div>
-            <h2>Start Of Day Alerts</h2>
+            <h2>Start Of Day Alerts ({alerts.length})</h2>
             <span>As of {new Date().toLocaleString('en-IN')}</span>
           </div>
           <Button variant="outline" onClick={() => go('shipment-checklist')}>
@@ -560,7 +545,7 @@ function ShipzyDashboard({
         </header>
         {alerts.length ? (
           <div className="shipzy-alert-grid">
-            {alerts.map((a) => (
+            {(allAlerts ? alerts : alerts.slice(0, 8)).map((a) => (
               <button key={a.id} onClick={() => go(a.route)}>
                 <AlertTriangle size={18} />
                 <span className={'shipzy-alert-severity ' + a.severity}>
@@ -572,8 +557,9 @@ function ShipzyDashboard({
             ))}
           </div>
         ) : (
-          <div className="shipzy-all-clear">No overdue receivables or shipment ETA alerts for this view.</div>
+          <div className="shipzy-all-clear">No overdue receivables or unconfirmed shipment milestones for this view.</div>
         )}
+        {alerts.length > 8 && <footer><span>Showing {allAlerts ? alerts.length : 8} of {alerts.length} alerts</span><Button variant="outline" onClick={() => setAllAlerts(v => !v)}>{allAlerts ? 'Show fewer' : 'Show all alerts'}</Button></footer>}
       </section>
       <RunningOrders fy={fy} go={go} />
       <div className="shipzy-dashboard-grid">
