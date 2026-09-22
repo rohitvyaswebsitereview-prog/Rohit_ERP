@@ -23,21 +23,21 @@
   margin: 0;
 }
 .shipzy-sidebar {
-  width: 242px;
+  width: 228px;
   position: fixed;
   inset: 0 auto 0 0;
-  background: #292d38;
+  background: #303644;
   color: #dce0e4;
   overflow: auto;
   z-index: 40;
   scrollbar-width: thin;
-  scrollbar-color: #59606b #292d38;
+  scrollbar-color: #59606b #303644;
 }
 .shipzy-brand {
   display: flex;
   align-items: center;
   gap: 13px;
-  height: 79px;
+  height: 64px;
   padding: 16px 24px;
   color: white;
   text-decoration: none;
@@ -66,13 +66,13 @@
   gap: 13px;
   text-align: left;
   color: #e1e4e7;
-  padding: 15px 15px;
+  padding: 10px 14px;
   background: transparent;
   border: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
   border-radius: 4px;
-  min-height: 50px;
+  min-height: 40px;
 }
 .shipzy-sidebar nav > div > button > span {
   flex: 1;
@@ -89,30 +89,31 @@
   background: transparent;
 }
 .shipzy-submenu {
-  padding: 0 0 9px;
+  padding: 4px 0 8px;
+  background: #303644;
 }
 .shipzy-submenu button {
   color: #e3e8e9;
   width: 100%;
-  padding: 10px 12px 10px 48px;
+  padding: 8px 12px 8px 45px;
   font-size: 14px;
   text-align: left;
 }
 .shipzy-submenu button.selected {
   color: #fff;
   font-weight: 600;
-  background: #ffffff10;
+  background: #29b77d;
 }
 .shipzy-submenu button:hover {
   background: #ffffff12;
 }
 .shipzy-main {
-  width: calc(100% - 242px);
-  margin-left: 242px;
+  width: calc(100% - 228px);
+  margin-left: 228px;
   min-width: 0;
 }
 .shipzy-header {
-  height: 76px;
+  height: 64px;
   position: sticky;
   top: 0;
   z-index: 30;
@@ -168,7 +169,7 @@
   padding: 7px;
 }
 .shipzy-content {
-  padding: 24px 26px;
+  padding: 18px 20px;
   min-height: calc(100vh - 115px);
 }
 .shipzy-footer {
@@ -338,7 +339,7 @@
   justify-content: space-between;
   gap: 20px;
   align-items: center;
-  padding: 21px 23px;
+  padding: 14px 18px;
 }
 .shipzy-table-toolbar > div {
   display: flex;
@@ -373,12 +374,12 @@
   color: #424c54;
   white-space: nowrap;
   text-align: left;
-  padding: 15px 17px;
+  padding: 12px 14px;
   background: #fff;
   border-bottom: 1px solid #e4e9ed;
 }
 .shipzy-app td {
-  padding: 17px;
+  padding: 11px 14px;
   vertical-align: middle;
   border-bottom: 1px solid #edf0f3;
   color: #5c6871;
@@ -635,7 +636,7 @@
 .shipzy-master-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 23px;
+  gap: 16px;
 }
 .shipzy-master-grid > section {
   background: #fff;
@@ -856,7 +857,7 @@
 .shipzy-editor .sales-fields,
 .shipzy-editor .op-form-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 23px !important;
+  gap: 16px !important;
 }
 .shipzy-editor label {
   font-size: 13px !important;
@@ -873,7 +874,7 @@
   font-size: 19px;
 }
 .shipzy-editor .sales-editor-layout {
-  grid-template-columns: minmax(0, 1fr) 245px;
+  grid-template-columns: minmax(0, 1fr);
 }
 .shipzy-app .shipzy-check-done {
   color: #38ad80 !important;
@@ -1156,3 +1157,58 @@
 .shipment-timeline li.overdue { border-color: #b9761c; }
 .shipment-timeline small, .shipment-timeline p { font-size: 14px; }
 .shipment-stale { color: #8a5312; }
+.report-catalog-item { display: flex; align-items: center; border: 1px solid #e3e9ef; border-radius: 5px; padding-right: 10px; background: white; }
+.shipzy-report-grid .report-catalog-item > button:first-child { flex: 1; min-width: 0; border: 0; box-shadow: none; }
+.report-catalog-item small { display: block; font-size: 13px; line-height: 1.5; font-weight: 400; color: #53636f; margin-top: 6px; }
+.shipzy-report-grid .report-catalog-item > button:last-child { width: 38px; padding: 6px; flex-shrink: 0; justify-content: center; }
+
+/* Shared reference layout: compact navigation, flat workspaces and quiet controls. */
+.shipzy-sidebar .shipzy-brand { position: sticky; top: 0; background: #303644; z-index: 2; }
+.shipzy-sidebar nav { padding-bottom: 20px; }
+.shipzy-nav-active > button { box-shadow: inset 3px 0 #18a96c; }
+.shipzy-submenu button { font-size: 13px; }
+.shipzy-header h1 { font-size: 18px; }
+.shipzy-panel, .shipzy-editor { box-shadow: none; border-radius: 3px; }
+.shipzy-tabs > button { padding: 13px 3px; font-size: 13px; }
+.shipzy-master-grid > section { padding: 12px 14px; border-radius: 3px; box-shadow: 0 1px 3px #2734410a; }
+.shipzy-master-grid h2 { font-size: 13px; padding: 9px 8px; }
+.shipzy-master-grid button { font-size: 13px; color: #56636c; border-bottom: 0; }
+.shipzy-master-grid button:hover { background: #f1f7fa; }
+.shipzy-master-count { color: #657780; background: #f2f5f7; padding: 0 6px; border-radius: 3px; font-size: 11px; }
+.shipzy-setup { padding: 12px 16px; margin-bottom: 16px; }
+.shipzy-setup summary { cursor: pointer; color: #586770; font-size: 13px; }
+.shipzy-setup summary span { float: right; font-size: 12px; }
+.shipzy-catalog-search { margin-bottom: 14px; }
+.shipzy-table-toolbar { flex-wrap: wrap; }
+.shipzy-table-toolbar > div { flex-wrap: wrap; }
+.shipzy-table-toolbar > div:last-child { margin-left: auto; }
+.shipzy-list-options { order: 3; width: 100%; font-size: 12px; color: #536874; }
+.shipzy-list-options summary { cursor: pointer; width: fit-content; }
+.shipzy-list-options > div { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding-top: 12px; }
+.shipzy-list-options input[type=checkbox] { width: auto; }
+.shipzy-app .shipzy-export { background: #df8245; border-color: #df8245; color: #fff; }
+.shipzy-app .shipzy-export:hover { background: #c46d35; }
+.shipzy-editor .sales-editor-layout > aside { position: static; width: 100%; }
+.shipzy-editor .sales-main-form { border: 0; padding: 0; }
+.shipzy-editor .sales-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.shipzy-mobile-scrim { display: none; }
+@media (max-width: 1100px) {
+  .shipzy-header form { max-width: 260px; }
+  .shipzy-header { gap: 10px; }
+}
+@media (max-width: 700px) {
+  .shipzy-app:not(.shipzy-collapsed) .shipzy-main { margin-left: 0; width: 100%; }
+  .shipzy-mobile-scrim { display: block; position: fixed; inset: 0; background: #15253670; z-index: 35; }
+  .shipzy-table-toolbar > div:last-child { margin-left: 0; }
+  .shipzy-table-toolbar input { max-width: 100%; width: 160px; }
+  .shipzy-editor .sales-fields { grid-template-columns: 1fr; }
+  .shipzy-setup summary span { float: none; display: block; margin-left: 14px; }
+}
+
+.shipzy-report-domain { border: 1px solid #e2e8ec; border-top: 3px solid #4f8ba5; border-radius: 4px; background: #fff; padding: 14px 12px; align-self: start; }
+.shipzy-report-domain h2 { display: flex; gap: 9px; align-items: center; font-size: 14px; font-weight: 600; padding: 0 5px 12px; color: #45535d; }
+.shipzy-report-domain .report-catalog-item { border: 0; padding-right: 0; }
+.shipzy-report-domains .report-catalog-item > button:first-child { padding: 9px 5px; gap: 7px; background: transparent; }
+.shipzy-report-domains .report-catalog-item > button:first-child:hover { background: #f0f6f8; }
+.shipzy-report-domains .report-catalog-item strong { font-size: 12px; }
+.shipzy-report-domains .report-catalog-item > button:last-child { border: 0; width: 26px; min-width: 26px; padding: 4px; color: #7c8c94; }

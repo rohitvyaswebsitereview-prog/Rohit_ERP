@@ -11,6 +11,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import assert from 'node:assert/strict';
 import {shipzyMenus} from './lib/shipzy-navigation';
+import {masterCategories} from './lib/masters';
 import {opMap,operationRoutes} from './lib/operations';
 import {masterReadiness} from './lib/master-readiness';
 import {receivableAgeing} from './lib/receivable-ageing';
@@ -60,6 +61,11 @@ check('Ageing boundaries use due date rather than invoice date',()=>{
   }
 });
 const custom=new Set(['dashboard','export-docs','pre-shipment','post-shipment','packing-drive','shipment-checklist','documents-drive','costing','reports','masters','logistics-master','profile','users','administration-permissions','receivables','payables','inventory-stock-register']);
+check('All master catalog destinations are directly reachable in the expanded sidebar',()=>{
+  const destinations=shipzyMenus.filter(m=>['masters','logistics-master'].includes(m.route)).flatMap(m=>m.children||[]).map(([r])=>r);
+  for(const category of masterCategories) for(const item of category.items) assert.ok(destinations.includes(item.route),item.route);
+  assert.ok(shipzyMenus.some(m=>m.route==='einvoices'));
+});
 check('Every sidebar destination resolves to a working screen',()=>{for(const menu of shipzyMenus)for(const r of menu.children?menu.children.map(c=>c[0]):[menu.route])assert.ok(opMap[operationRoutes[r]||r]||custom.has(r),'Missing '+r)});
 const r={id:'i',kind:'invoices',reference:'INV-TEST',fy:'2026–27',date:'2026-04-01',status:'Imported',importLocked:true,customerName:'Customer <test>',currency:'INR',amount:118000,lines:[{description:'Excavator',quantity:1,uom:'NOS'}]};
 check('Product register sorts the full result before pagination and shows identifying fields',()=>{

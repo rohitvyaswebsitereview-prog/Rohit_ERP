@@ -1,3 +1,4 @@
+import { masterCategories } from './masters';
 import {
   LayoutDashboard,
   Quote,
@@ -36,6 +37,7 @@ export const shipzyMenus = [
   },
   { title: 'Invoices', route: 'invoices', icon: FileText },
   { title: 'E-Way Bill', route: 'eway-bills', icon: Truck },
+  { title: 'E-Invoice', route: 'einvoices', icon: FileText },
   {
     title: 'Purchase',
     route: 'purchase',
@@ -87,8 +89,22 @@ export const shipzyMenus = [
   { title: 'ERP Drive', route: 'documents-drive', icon: Folder },
   { title: 'Costing Sheet', route: 'costing', icon: Calculator },
   { title: 'Reports', route: 'reports', icon: ChartNoAxesCombined },
-  { title: 'Master Settings', route: 'masters', icon: Settings },
-  { title: 'Logistics Master', route: 'logistics-master', icon: Truck },
+  {
+    title: 'Master Settings', route: 'masters', icon: Settings,
+    children: [
+      ['masters', 'All Master Settings'],
+      ...masterCategories.filter(c => c.key !== 'logistics').flatMap(c =>
+        c.items.map(i => [i.route, i.label])),
+    ],
+  },
+  {
+    title: 'Logistics Master', route: 'logistics-master', icon: Truck,
+    children: [
+      ['logistics-master', 'All Logistics Settings'],
+      ...masterCategories.filter(c => c.key === 'logistics').flatMap(c =>
+        c.items.map(i => [i.route, i.label])),
+    ],
+  },
   {
     title: 'User',
     route: 'user-settings',

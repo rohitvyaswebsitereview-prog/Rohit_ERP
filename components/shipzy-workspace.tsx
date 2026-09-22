@@ -113,6 +113,7 @@ export default function ShipzyWorkspace({
     setUrl(r);
     setResults(null);
     setSearch('');
+    if (window.matchMedia('(max-width:700px)').matches) setCollapsed(true);
     window.scrollTo(0, 0);
   };
   useEffect(() => {
@@ -144,6 +145,10 @@ export default function ShipzyWorkspace({
     route = operationRoutes[raw] || raw,
     selected = records.find((r) => r.id === params.get('record')),
     m = opMap[route];
+  useEffect(() => {
+    const parent = shipzyMenus.find(n => n.children?.some(([r]) => r === route));
+    if (parent) setExpanded(parent.route);
+  }, [route]);
   const can = (r: string) => canOpenWorkspace(r, user.role),
     name =
       shipzyTitle(route) || titles[route] || opMap[route]?.label || 'Workspace';
@@ -214,7 +219,8 @@ export default function ShipzyWorkspace({
                     onClick={() =>
                       n.children
                         ? (setCollapsed(false),
-                          setExpanded(expanded === n.route ? '' : n.route))
+                          setExpanded(expanded === n.route ? '' : n.route),
+                          ['masters', 'logistics-master'].includes(n.route) && go(n.route))
                         : go(n.route)
                     }
                     aria-expanded={
@@ -232,6 +238,7 @@ export default function ShipzyWorkspace({
                         .map(([r, l]) => (
                           <button
                             key={r}
+                            aria-current={route === r ? 'page' : undefined}
                             className={route === r ? 'selected' : ''}
                             onClick={() => go(r)}
                           >
@@ -245,6 +252,7 @@ export default function ShipzyWorkspace({
             })}
         </nav>
       </aside>
+      {!collapsed && <button className="shipzy-mobile-scrim" aria-label="Close navigation" onClick={() => setCollapsed(true)} />}
       <div className="shipzy-main">
         <header className="shipzy-header">
           <button
@@ -394,7 +402,7 @@ export default function ShipzyWorkspace({
               payable={route === 'payables'}
             />
           ) : route === 'reports' ? (
-            <ShipzyReports go={go} role={user.role} />
+            <ShipzyReports go={go} role={user.role} userId={user.id} />
           ) : m ? (
             <ShipzyRegister
               key={route + fy + query}
@@ -780,6 +788,9 @@ export function ShipzyRegister({
           Product sales: {filters.get('currency')} · month {filters.get('month')} · {filters.get('product') ? records.find(r => r.id === filters.get('product'))?.name || 'Selected product' : 'All products'}
           {' · Matching line total: '}{money(productSalesTotal(records, fy, filters.get('currency') || 'INR', filters.get('month') || '', filters.get('product') || ''), filters.get('currency') || 'INR')}
         </span><Button variant="outline" onClick={() => go(kind)}>Clear chart filters</Button></div>}
+        {master && <nav className="shipzy-tabs" aria-label="Record status">
+          {['All', 'Active', 'Inactive'].map(s => <button key={s} className={status === s ? 'active' : ''} onClick={() => setStatus(s)}>{s === 'All' ? m.label : s}</button>)}
+        </nav>}
         {!master && (
           <nav className="shipzy-tabs">
             {(kind === 'proformas'
@@ -807,12 +818,12 @@ export function ShipzyRegister({
           </nav>
         )}
         <div className="shipzy-table-toolbar">
-          {products && <div>
+          {products && <details className="shipzy-list-options"><summary>List options</summary><div>
             <label>Sort by <select value={sortKey} onChange={e => setSortKey(e.target.value)}>{[['name', 'Product name'], ['sku', 'SKU'], ['hsn', 'HSN'], ['updatedAt', 'Last updated']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
             <Button variant="outline" onClick={() => setDescending(v => !v)}>{descending ? 'Descending' : 'Ascending'}</Button>
             <label>Status <select value={status} onChange={e => setStatus(e.target.value)}><option>All</option>{[...new Set(records.filter(r => r.kind === kind).map(r => r.status).filter(Boolean))].map(s => <option key={s}>{s}</option>)}</select></label>
             <label><input type="checkbox" checked={measurements} onChange={e => setMeasurements(e.target.checked)} /> Show measurements</label>
-          </div>}
+          </div></details>}
           <label>
             Show{' '}
             <select
@@ -840,6 +851,7 @@ export function ShipzyRegister({
             {products && permittedOperation(m, user.role, true) && <ProductImport records={records} />}
             <Button
               variant="outline"
+              className="shipzy-export"
               onClick={() =>
                 exportCSV(
                   rows.map((r) => products ? ({
@@ -858,7 +870,7 @@ export function ShipzyRegister({
                 )
               }
             >
-              Export
+              Export to CSV
             </Button>
           </div>
         </div>
@@ -1444,7 +1456,7 @@ export function ShipzyMasters({
   logistics?: boolean;
 }) {
   const [q, setQ] = useState('');
-  const [compact, setCompact] = useState(false);
+  const [compact, setCompact] = useState(true);
   const readiness = masterReadiness(records, role);
   const completed = readiness.filter(item => item.ready).length;
   const all = masterCategories.flatMap((c) => c.items);
@@ -1516,8 +1528,8 @@ export function ShipzyMasters({
         />
       </div>
       {!logistics && readiness.length > 0 && (
-        <section className="shipzy-setup" aria-label="Setup readiness">
-          <div><strong>Setup checklist</strong><span>{completed} of {readiness.length} ready</span></div>
+        <details className="shipzy-setup" aria-label="Setup readiness">
+          <summary><strong>Setup checklist</strong><span>{completed} of {readiness.length} ready · Review setup</span></summary>
           <progress value={completed} max={readiness.length} aria-label="Setup completion" />
           <p>Review these details before preparing transactions and documents.</p>
           <div className="shipzy-setup-items">
@@ -1527,7 +1539,7 @@ export function ShipzyMasters({
               <ChevronRight size={16} />
             </button>)}
           </div>
-        </section>
+        </details>
       )}
       {!hasMatches && <p role="status">No settings match “{q}”. Try another name.</p>}
       <div className={'shipzy-master-grid' + (compact ? ' compact' : '')}>
@@ -1703,11 +1715,38 @@ function ShipzyDrive({
     </section>
   );
 }
-function ShipzyReports({ go, role }: { go: any; role: string }) {
+function ShipzyReports({ go, role, userId }: { go: any; role: string; userId: string }) {
   const [q, setQ] = useState('');
+  const [category, setCategory] = useState('All');
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [recent, setRecent] = useState<string[]>([]);
+  const [storageError, setStorageError] = useState('');
+  const storageKey = 'erp-report-shortcuts-' + userId;
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+      setFavorites(Array.isArray(saved.favorites) ? saved.favorites.filter((r: any) => typeof r === 'string') : []);
+      setRecent(Array.isArray(saved.recent) ? saved.recent.filter((r: any) => typeof r === 'string') : []);
+    } catch { setStorageError('Saved shortcuts are unavailable on this device.'); }
+  }, [storageKey]);
+  const save = (f: string[], r: string[]) => {
+    setFavorites(f); setRecent(r);
+    try { localStorage.setItem(storageKey, JSON.stringify({ favorites:f, recent:r })); }
+    catch { setStorageError('Shortcuts could not be saved on this device.'); }
+  };
+  const domain = (route: string) => ['receivables', 'payables'].includes(route) ? 'Finance' :
+    ({ sales:'Sales', inventory:'Inventory', logistics:'Logistics', finance:'Finance', compliance:'Compliance', tasks:'Tasks', documents:'Documents' } as Record<string,string>)[route.split('-')[0]] || 'Other';
+  const available = Object.entries(reportRoutes).filter(([r,c]) => canOpenWorkspace(r,role) && c.mode !== 'documents');
+  const reports = available.filter(([r,c]) =>
+    (category === 'All' || category === domain(r) || category === 'Favourites' && favorites.includes(r) || category === 'Recent' && recent.includes(r)) &&
+    (c.title + ' ' + domain(r)).toLowerCase().includes(q.trim().toLowerCase()));
+  if (category === 'Recent') reports.sort(([a],[b]) => recent.indexOf(a)-recent.indexOf(b));
+  const describe = (c: (typeof reportRoutes)[string]) => c.kinds?.length ?
+    'Review ' + c.kinds.map(k => (opMap[k]?.label || label(k)).toLowerCase()).join(', ') + '.' : 'Review generated files and their linked records.';
   return (
     <>
       <div className="shipzy-catalog-search">
+        <label>Category <select value={category} onChange={e => setCategory(e.target.value)}>{['All','Favourites','Recent',...new Set(available.map(([r])=>domain(r)))].map(c => <option key={c}>{c}</option>)}</select></label>
         <Input
           placeholder="Search reports…"
           aria-label="Search reports"
@@ -1715,22 +1754,25 @@ function ShipzyReports({ go, role }: { go: any; role: string }) {
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
-      <div className="shipzy-report-grid">
-        {Object.entries(reportRoutes)
-          .filter(
-            ([r, c]) =>
-              canOpenWorkspace(r, role) &&
-              c.mode !== 'documents' &&
-              c.title.toLowerCase().includes(q.toLowerCase()),
-          )
-          .map(([r, c]) => (
-            <button key={r} onClick={() => go(r)}>
-              <FileText size={22} />
-              <strong>{c.title}</strong>
-              <ChevronRight size={17} />
-            </button>
-          ))}
+      <p className="shipzy-muted">{reports.length} reports · Favourites and recent reports are saved on this device.</p>
+      {storageError && <p role="status">{storageError}</p>}
+      <div className="shipzy-report-grid shipzy-report-domains">
+        {[...new Set(reports.map(([r]) => domain(r)))].map(group => (
+          <section className="shipzy-report-domain" key={group}>
+            <h2><FileText size={18} />{group} Reports</h2>
+            {reports.filter(([r]) => domain(r) === group).map(([r, c]) => (
+              <div className="report-catalog-item" key={r}>
+                <button title={describe(c)} onClick={() => { save(favorites,[r,...recent.filter(x=>x!==r)].slice(0,8)); go(r); }}>
+                  <ChevronRight size={14} />
+                  <strong>{c.title}</strong>
+                </button>
+                <Button variant="ghost" aria-pressed={favorites.includes(r)} aria-label={(favorites.includes(r)?'Remove favourite: ':'Add favourite: ')+c.title} onClick={() => save(favorites.includes(r)?favorites.filter(x=>x!==r):[...favorites,r],recent)}>{favorites.includes(r)?'★':'☆'}</Button>
+              </div>
+            ))}
+          </section>
+        ))}
       </div>
+      {!reports.length && <Blank title="No matching reports" detail="Choose another category or change your search." />}
     </>
   );
 }
