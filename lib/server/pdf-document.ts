@@ -1,9 +1,11 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 /** A paginated snapshot including the company's saved branding assets. */
-export async function pdfDocument({ title, company, subtitle, lines, footer, signature }: {
+export async function pdfDocument({ title, company, subtitle, lines, footer, signature, table, afterTable }: {
   title: string; company: any; subtitle?: string; lines: string[];
   footer?: string; signature?: string;
+  table?: { headers: string[]; widths: number[]; rows: string[][] };
+  afterTable?: string[];
 }) {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -82,6 +84,46 @@ export async function pdfDocument({ title, company, subtitle, lines, footer, sig
   if (subtitle) text(subtitle);
   y -= 12;
   for (const line of lines) text(line);
+  if (table?.rows.length) {
+    if (table.headers.length !== table.widths.length || table.widths.some(w => w < 20) ||
+        Math.abs(table.widths.reduce((a, b) => a + b, 0) - 499) > .01)
+      throw new Error('Invalid document table layout.');
+    const border = rgb(.72, .76, .79);
+    const headerRow = () => {
+      if (y < 120) newPage();
+      let x = 48;
+      const cells = table.headers.map((h, i) => wrapped(h, table.widths[i] - 10, 8));
+      const height = Math.max(...cells.map(c => c.length)) * 12 + 10;
+      cells.forEach((cell, i) => {
+        page.drawRectangle({ x, y: y - height, width: table.widths[i], height, color: rgb(.94, .96, .97), borderColor: border, borderWidth: .5 });
+        cell.forEach((v, j) => draw(v, x + 5, y - 13 - j * 12, 8, true));
+        x += table.widths[i];
+      });
+      y -= height;
+    };
+    headerRow();
+    for (const row of table.rows) {
+      const cells = table.headers.map((_, i) => wrapped(row[i] ?? '', table.widths[i] - 10, 8));
+      const count = Math.max(...cells.map(c => c.length));
+      let offset = 0;
+      while (offset < count) {
+        if (y < 110) { newPage(); headerRow(); }
+        const take = Math.min(count - offset, Math.max(1, Math.floor((y - 85) / 12)));
+        const height = take * 12 + 10;
+        let x = 48;
+        cells.forEach((cell, i) => {
+          page.drawRectangle({ x, y: y - height, width: table.widths[i], height, borderColor: border, borderWidth: .5 });
+          cell.slice(offset, offset + take).forEach((v, j) => draw(v, x + 5, y - 13 - j * 12, 8));
+          x += table.widths[i];
+        });
+        y -= height;
+        offset += take;
+        if (offset < count) { newPage(); headerRow(); }
+      }
+    }
+    y -= 18;
+  }
+  for (const line of afterTable || []) text(line);
   if (y < 185) newPage();
   y -= 24;
   if (sign) {

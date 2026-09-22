@@ -40,3 +40,6 @@ next-env.d.ts
 *.tsbuildinfo
 *.sqlite*
 *.db*
+
+# Rendered PDF verification samples
+/tmp/pdfs/

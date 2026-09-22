@@ -20,3 +20,9 @@ Business data, authentication, authorization, financial calculations, imports, d
 ## Verification and limits
 
 TypeScript, production build and layout route/permission/render checks are run before restart. HTTP checks verify localhost. Browser visual inspection requires a working attached preview; it was unavailable during this pass. This is not a claim of pixel-for-pixel parity or implementation of external email, carrier or government integrations pictured in the references.
+
+## Invoice PDF table follow-up
+
+Generated PDFs now render stored line descriptions, HSN, quantity, unit, unit rate and amount in a bordered table. Measurement snapshots stay with their line; saved sales totals follow the table. Table headings repeat on continuation pages. Company branding and signatory rendering are preserved.
+
+Verification: the PDF test checks all 100 unique table rows, repeated headings and the final total over six pages, in addition to the existing 180-line pagination case. First and final pages were rendered and visually inspected. All 166 integration checks passed. This does not establish complete customs-document content or final parity with every reference document.

@@ -461,18 +461,9 @@ export async function operations(
       existing.currency &&
         existing.amount &&
         `Amount: ${existing.currency} ${(existing.amount / 100).toFixed(2)}`,
-      ...(existing.lines || []).flatMap(
-        (l: any, i: number) =>
-          [`${i + 1}. ${l.description || l.productName || 'Item'} | Qty ${l.quantity || ''} ${l.uom || ''} | ${
-            existing.currency || ''
-          } ${l.total === undefined ? '' : (l.total / 100).toFixed(2)}`,
-          ...(['netWeightKg', 'grossWeightKg', 'volumeM3'] as const).flatMap(key => {
-            const value = l.productMeasurements?.[key];
-            if (value === undefined || value === '') return [];
-            const name = { netWeightKg: 'Net weight (kg)', grossWeightKg: 'Gross weight (kg)', volumeM3: 'Volume (m3)' }[key];
-            return [`${name}: ${value} per unit; ${(Number(value) * Number(l.quantity || 0)).toFixed(6).replace(/\.?0+$/, '') || '0'} line total`];
-          })],
-      ),
+      partner.address && `Customer / supplier address: ${partner.address}`,
+      existing.paymentTermsId && `Payment terms: ${find(existing.paymentTermsId)?.name || ''}`,
+      existing.shipmentTermsId && `Shipment terms: ${find(existing.shipmentTermsId)?.name || ''}`,
       existing.customsQuery && `Customs query: ${existing.customsQuery}`,
       existing.notes && `Notes: ${existing.notes}`,
     ].filter(Boolean) as string[];
@@ -482,6 +473,30 @@ export async function operations(
       subtitle: existing.reference || existing.name,
       lines,
       signature: company.authorizedSignatory,
+      table: {
+        headers: ['No.', 'Description of goods', 'HSN', 'Quantity', 'Unit', 'Unit rate', 'Amount (' + (existing.currency || '') + ')'],
+        widths: [24, 175, 55, 45, 40, 75, 85],
+        rows: (existing.lines || []).map((l: any, i: number) => [
+          String(i + 1),
+          [l.description || l.productName || 'Item',
+            ...(['netWeightKg', 'grossWeightKg', 'volumeM3'] as const).flatMap(key => {
+              const value = l.productMeasurements?.[key];
+              if (value === undefined || value === '') return [];
+              const name = { netWeightKg: 'Net kg', grossWeightKg: 'Gross kg', volumeM3: 'Volume m3' }[key];
+              return [`${name}: ${value}/unit; ${Number((Number(value) * Number(l.quantity || 0)).toFixed(6))} total`];
+            }),
+          ].join('\n'),
+          String(l.hsn || ''), String(l.quantity ?? ''), String(l.uom || ''),
+          l.rate === undefined || l.rate === '' ? '' : Number(l.rate).toFixed(2),
+          l.total === undefined ? '' : (l.total / 100).toFixed(2),
+        ]),
+      },
+      afterTable: [
+        ...Object.entries({ subtotal: 'Subtotal', discount: 'Discount', gst: 'GST', tcs: 'TCS', tds: 'TDS', charges: 'Charges', rounding: 'Rounding' })
+          .filter(([key]) => existing.totals?.[key] !== undefined)
+          .map(([key, name]) => `${name}: ${existing.currency || ''} ${(Number(existing.totals[key]) / 100).toFixed(2)}`),
+        existing.amount !== undefined ? `Grand total: ${existing.currency || ''} ${(existing.amount / 100).toFixed(2)}` : '',
+      ].filter(Boolean),
     });
     const did = makeId(),
       objectKey = `${u.tenant_id}/${rid}/${did}`,
