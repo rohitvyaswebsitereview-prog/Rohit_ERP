@@ -26,3 +26,9 @@ TypeScript, production build and layout route/permission/render checks are run b
 Generated PDFs now render stored line descriptions, HSN, quantity, unit, unit rate and amount in a bordered table. Measurement snapshots stay with their line; saved sales totals follow the table. Table headings repeat on continuation pages. Company branding and signatory rendering are preserved.
 
 Verification: the PDF test checks all 100 unique table rows, repeated headings and the final total over six pages, in addition to the existing 180-line pagination case. First and final pages were rendered and visually inspected. All 166 integration checks passed. This does not establish complete customs-document content or final parity with every reference document.
+
+## Invoice action and preview follow-up
+
+Invoice list and detail Action menus now open an Invoice PDFs window. It separates commercial and customs invoice snapshots, shows saved versions/status/date, embeds the authenticated PDF preview and provides download/open links. Creation permissions control generation; earlier Customer invoice files remain visible in commercial history. Generating another version preserves existing files. The print-page action is explicitly labelled as such.
+
+TypeScript, production build and 25 layout/helper checks passed. The added helper test verifies record and type isolation, PDF MIME filtering, prior category compatibility and chronological version selection. Browser interaction verification remains unproven: the in-app preview timed out while attaching. The customs output still needs its complete reference-content audit; this window does not itself provide customs submission or approval.

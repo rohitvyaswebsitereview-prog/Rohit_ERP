@@ -55,6 +55,7 @@ import { useDataView } from './data-view';
 import { Documents } from './operations';
 import { DocumentActivity } from './document-activity';
 import { ProductImport } from './product-import';
+import { InvoicePdfs } from './invoice-pdfs';
 import { ShipmentTimeline } from './shipment-timeline';
 import { shipmentAlerts } from '@/lib/shipment-alerts';
 import { reportRoutes } from './operation-reports';
@@ -749,6 +750,7 @@ export function ShipzyRegister({
   go: any;
   user: any;
 }) {
+  const [pdfRecord, setPdfRecord] = useState<any>(null);
   const [q, setQ] = useState(''),
     [status, setStatus] = useState('All'),
     [size, setSize] = useState(10),
@@ -953,6 +955,7 @@ export function ShipzyRegister({
                               Edit
                             </DropdownMenuItem>
                           )}
+                        {['invoices', 'domestic-invoices'].includes(kind) && <DropdownMenuItem onClick={() => setPdfRecord(r)}>Invoice PDFs · Preview / Download</DropdownMenuItem>}
                         <DropdownMenuItem
                           onClick={() => go(recordLink(r, 'Documents'))}
                         >
@@ -1089,6 +1092,7 @@ export function ShipzyRegister({
           </div>
         </footer>
       </section>
+      {pdfRecord && <InvoicePdfs key={pdfRecord.id} record={pdfRecord} canWrite={permittedOperation(m, user.role, true)} onClose={() => setPdfRecord(null)} />}
     </>
   );
 }
@@ -1105,6 +1109,7 @@ function ShipzyRecord({
   user: any;
   refreshParent: () => void;
 }) {
+  const [pdfOpen, setPdfOpen] = useState(false);
   const [data, setData] = useState<any>(null),
     [files, setFiles] = useState<any[]>([]),
     [tab, setTab] = useState(initialTab === 'Actions' ? 'General' : initialTab),
@@ -1250,8 +1255,9 @@ function ShipzyRecord({
               Action <ChevronDown size={13} />
             </DropdownMenuTrigger>
             <DropdownMenuContent>
+              {['invoices', 'domestic-invoices'].includes(r.kind) && <DropdownMenuItem onClick={() => setPdfOpen(true)}>Invoice PDFs · Preview / Download</DropdownMenuItem>}
               <DropdownMenuItem onClick={() => window.print()}>
-                Print / Save PDF
+                Print this page
               </DropdownMenuItem>
               {canWrite && (
                 <DropdownMenuItem onClick={generatePdf}>
@@ -1407,6 +1413,7 @@ function ShipzyRecord({
         </span>
         <span>Version {r.version || 1}</span>
       </footer>
+      {pdfOpen && <InvoicePdfs record={r} canWrite={canWrite} onClose={() => setPdfOpen(false)} onGenerated={() => { setRevision(v => v + 1); refreshParent(); }} />}
       <Dialog open={!!action} onOpenChange={(v) => !v && setAction('')}>
         <DialogContent>
           <DialogTitle>

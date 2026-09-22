@@ -11,6 +11,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import assert from 'node:assert/strict';
 import {shipzyMenus} from './lib/shipzy-navigation';
+import {invoicePdfVersions} from './lib/invoice-pdfs';
 import {masterCategories} from './lib/masters';
 import {opMap,operationRoutes} from './lib/operations';
 import {masterReadiness} from './lib/master-readiness';
@@ -22,6 +23,18 @@ import {ShipmentTimeline} from './components/shipment-timeline';
 import {shipmentAlerts} from './lib/shipment-alerts';
 import {ShipzyRegister,ShipzyMasters,ShipzyPayments} from './components/shipzy-workspace';
 let count=0;function check(label,fn){fn();count++;console.log('PASS '+label)}
+check('Invoice PDF versions isolate record, file format and document type while retaining earlier labels',()=>{
+  const files=[
+    {id:'old',entityId:'a',mime:'application/pdf',category:'Customer invoice',created:'2026-01-01',documentVersion:8},
+    {id:'new',entityId:'a',mime:'application/pdf',category:'Commercial invoice',created:'2026-02-01',documentVersion:1},
+    {id:'customs',entityId:'a',mime:'application/pdf',category:'Customs invoice'},
+    {id:'other',entityId:'b',mime:'application/pdf',category:'Commercial invoice'},
+    {id:'word',entityId:'a',mime:'application/msword',category:'Commercial invoice'},
+  ];
+  assert.deepEqual(invoicePdfVersions(files,'a','Commercial invoice').map(d=>d.id),['new','old']);
+  assert.deepEqual(invoicePdfVersions(files,'a','Customs invoice').map(d=>d.id),['customs']);
+  assert.deepEqual(invoicePdfVersions(files,'missing','Commercial invoice'),[]);
+});
 check('Shipment alerts clear confirmed milestones and include missed departures',()=>{
   const shipment={id:'s',kind:'shipments',fy:'2026–27',reference:'SHIP',status:'Active',etd:'2026-04-01',eta:'2026-04-10'};
   assert.equal(shipmentAlerts([shipment],shipment.fy,'2026-05-01').length,2);
