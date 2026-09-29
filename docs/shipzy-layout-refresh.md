@@ -38,3 +38,9 @@ TypeScript, production build and 25 layout/helper checks passed. The added helpe
 Company records now have General, Branding, Document Defaults, Documents and Activity tabs. General groups identity, statutory IDs, contacts and addresses. Branding renders logo/header/signature images instead of raw data URLs and shows missing-image placeholders. Default signatory, prefixes and footer remain visible in Document Defaults. Generic record text excludes image fields.
 
 Live browser verification found that creation selected a nonexistent Basic tab for company fields. The editor now selects its first configured field section. After rebuilding and restarting, the browser confirmed Legal Identity selected and legal/trading name inputs visible. Branding controls for all three images were also inspected. No company record exists in the local database, so saved-image visual verification used component tests rather than invented business data. TypeScript, production build and 26 layout checks passed. The broader Shipzy review remains open.
+
+## Dashboard alert follow-up
+
+The start-of-day panel now computes alerts independently of receivables search/currency filters. It includes overdue posted or imported invoice balances, shipment confirmations and open overdue tasks, grouped into category tabs with counts. Currency labels remain on each balance, and draft invoices, completed tasks and invalid task due dates do not produce alerts. Task owner is included when recorded.
+
+TypeScript and 27 layout/helper checks passed, including a mixed-currency/draft/completed-task/invalid-date case. This does not complete stock shortage alerts, document-deadline coverage or persisted dismiss/snooze behavior from the reference workbook.

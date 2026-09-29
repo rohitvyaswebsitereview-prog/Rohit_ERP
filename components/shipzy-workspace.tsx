@@ -58,7 +58,7 @@ import { ProductImport } from './product-import';
 import { InvoicePdfs } from './invoice-pdfs';
 import { CompanyProfile } from './company-profile';
 import { ShipmentTimeline } from './shipment-timeline';
-import { shipmentAlerts } from '@/lib/shipment-alerts';
+import { dashboardAlerts } from '@/lib/dashboard-alerts';
 import { reportRoutes } from './operation-reports';
 const recordLink = (r: any, tab = 'General') =>
   r.kind +
@@ -501,6 +501,7 @@ function ShipzyDashboard({
   const [q, setQ] = useState(''),
     [product, setProduct] = useState(''),
     [allAlerts, setAllAlerts] = useState(false),
+    [alertGroup, setAlertGroup] = useState('All'),
     [salesCurrency, setSalesCurrency] = useState('INR'),
     [currency, setCurrency] = useState('USD');
   const balances = financial360(records, fy).lines.filter(
@@ -523,18 +524,8 @@ function ShipzyDashboard({
       .filter((r) => bucket(r) === b)
       .reduce((s, r) => s + r.balance, 0),
   }));
-  const alerts = [
-    ...balances
-      .filter((r) => !['Current', 'No due date'].includes(bucket(r)))
-      .map((r) => ({
-        id: 'due-' + r.id,
-        severity: bucket(r) === '90+' ? 'Critical' : 'Warning',
-        title: r.reference + ' receivable overdue',
-        detail: money(r.balance, r.currency) + ' pending · ' + bucket(r) + ' days',
-        route: 'invoices?record=' + encodeURIComponent(r.id),
-      })),
-    ...shipmentAlerts(records, fy, todayIso),
-  ];
+  const allDashboardAlerts = dashboardAlerts(records, fy, todayIso);
+  const alerts = allDashboardAlerts.filter(a => alertGroup === 'All' || a.group === alertGroup);
   const products = records.filter((r) => r.kind === 'products');
   const selected = product;
   const months = Array.from({ length: 12 }, (_, i) => (i + 3) % 12);
@@ -546,13 +537,18 @@ function ShipzyDashboard({
       <section className="shipzy-panel shipzy-alert-center">
         <header>
           <div>
-            <h2>Start Of Day Alerts ({alerts.length})</h2>
+            <h2>Start Of Day Alerts ({allDashboardAlerts.length})</h2>
             <span>As of {new Date().toLocaleString('en-IN')}</span>
           </div>
           <Button variant="outline" onClick={() => go('shipment-checklist')}>
             Open Checklist
           </Button>
         </header>
+        <nav className="shipzy-tabs" aria-label="Alert category">
+          {['All', 'Receivables', 'Shipments', 'Tasks'].map(group => <button key={group} className={alertGroup === group ? 'active' : ''} onClick={() => { setAlertGroup(group); setAllAlerts(false); }}>
+            {group} ({allDashboardAlerts.filter(a => group === 'All' || a.group === group).length})
+          </button>)}
+        </nav>
         {alerts.length ? (
           <div className="shipzy-alert-grid">
             {(allAlerts ? alerts : alerts.slice(0, 8)).map((a) => (
@@ -567,7 +563,7 @@ function ShipzyDashboard({
             ))}
           </div>
         ) : (
-          <div className="shipzy-all-clear">No overdue receivables or unconfirmed shipment milestones for this view.</div>
+          <div className="shipzy-all-clear">No overdue items in this alert category.</div>
         )}
         {alerts.length > 8 && <footer><span>Showing {allAlerts ? alerts.length : 8} of {alerts.length} alerts</span><Button variant="outline" onClick={() => setAllAlerts(v => !v)}>{allAlerts ? 'Show fewer' : 'Show all alerts'}</Button></footer>}
       </section>

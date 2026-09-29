@@ -11,6 +11,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import assert from 'node:assert/strict';
 import {shipzyMenus} from './lib/shipzy-navigation';
+import {dashboardAlerts} from './lib/dashboard-alerts';
 import {CompanyProfile} from './components/company-profile';
 import {invoicePdfVersions} from './lib/invoice-pdfs';
 import {masterCategories} from './lib/masters';
@@ -24,6 +25,14 @@ import {ShipmentTimeline} from './components/shipment-timeline';
 import {shipmentAlerts} from './lib/shipment-alerts';
 import {ShipzyRegister,ShipzyMasters,ShipzyPayments} from './components/shipzy-workspace';
 let count=0;function check(label,fn){fn();count++;console.log('PASS '+label)}
+check('Dashboard alerts include currencies independently and exclude drafts and completed tasks',()=>{
+  const inv={id:'a',kind:'invoices',fy:'2026–27',status:'Posted',amount:10000,currency:'USD',dueDate:'2026-04-01',reference:'A'};
+  const task={id:'t',kind:'tasks',fy:inv.fy,status:'Open',dueDate:'2026-04-01',name:'Review invoice'};
+  const alerts=dashboardAlerts([inv,{...inv,id:'b',currency:'INR'},{...inv,id:'draft',status:'Draft'},task,{...task,id:'done',status:'Completed'},{...task,id:'invalid',dueDate:'2026-02-30'}],inv.fy,'2026-09-29');
+  assert.deepEqual(alerts.map(a=>a.id).sort(),['due-a','due-b','task-t']);
+  assert.ok(alerts.find(a=>a.id==='due-a').detail.includes('USD 100.00'));
+  assert.equal(dashboardAlerts([inv,task],'2025–26','2026-09-29').length,0);
+});
 check('Company profile displays branding as images and keeps it out of general details',()=>{
   const image='data:image/png;base64,aGVsbG8=';
   const record={name:'Test exporter',logoDataUrl:image,signatureDataUrl:image,authorizedSignatory:'Named signatory'};
