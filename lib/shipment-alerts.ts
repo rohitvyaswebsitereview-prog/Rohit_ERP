@@ -6,7 +6,7 @@ export function shipmentAlerts(records: any[], fy: string, today: string) {
       {key:'etd',actual:r.departureDate,label:'Departure',date:r.etd},
       {key:'eta',actual:r.arrivalDate,label:'Arrival',date:r.eta},
     ].filter(m => !m.actual && m.date && m.date < today).map(m => ({
-      id:m.key+'-'+r.id, severity:'Attention',
+      id:m.key+'-'+r.id, dueDate:m.date, severity:'Attention',
       title:entityLabel(r)+' '+m.label.toLowerCase()+' needs confirmation',
       detail:`Expected ${m.date} · ${r.trackingSource || 'Source not recorded'}`,
       route:r.kind+'?record='+encodeURIComponent(r.id)+'&tab=Shipment%20Details',

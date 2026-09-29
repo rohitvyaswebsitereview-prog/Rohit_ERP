@@ -1235,3 +1235,54 @@
 .company-branding-preview span, .company-branding-grid small { color: #637680; font-size: 12px; }
 .company-branding-grid small { display: block; margin-top: 8px; }
 @media (max-width: 700px) { .company-branding-grid { grid-template-columns: 1fr; } }
+
+/* Dashboard.docx final V1 shell */
+.shipzy-sidebar { width: 240px; display: flex; flex-direction: column; overflow: visible; }
+.shipzy-sidebar nav { flex: 1; overflow-y: auto; min-height: 0; }
+.shipzy-brand { flex-shrink: 0; }
+.shipzy-main { margin-left: 240px; width: calc(100% - 240px); }
+.shipzy-sidebar nav > div > button { min-height: 44px; }
+.shipzy-sidebar nav > .shipzy-nav-active { background: #ffffff0d; border-radius: 6px; }
+.shipzy-sidebar nav > .shipzy-nav-active > button { color: #fff; box-shadow: inset 3px 0 #37ba91; }
+.shipzy-submenu button.selected { background: #ffffff12; color: #7fe1ba; }
+.shipzy-submenu-heading { display: block; padding: 14px 14px 4px 44px; color: #a2aebb; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.shipzy-system-item:has(+ .shipzy-system-item) { background: #ffffff03; }
+.shipzy-sidebar nav > .shipzy-system-item:first-of-type { border-top: 1px solid #667380; }
+.shipzy-collapsed .shipzy-sidebar { width: 68px; }
+.shipzy-collapsed .shipzy-main { margin-left: 68px; width: calc(100% - 68px); }
+.shipzy-collapsed .shipzy-submenu { display: block; position: fixed; left: 68px; top: 64px; width: 270px; max-height: calc(100dvh - 80px); overflow: auto; box-shadow: 6px 4px 24px #17202d40; border-radius: 0 8px 8px 0; z-index: 60; }
+.shipzy-collapsed .shipzy-submenu button { display: block; padding: 9px 16px; }
+.shipzy-collapsed .shipzy-submenu-heading { padding-left: 16px; }
+.shipzy-header { height: 64px; }
+.shipzy-header > button { width: 40px; height: 40px; flex-shrink: 0; }
+.shipzy-content { padding: 24px; }
+.shipzy-panel, .shipzy-app .widget { border-radius: 8px; }
+.dashboard-context { display: flex; align-items: end; gap: 14px; flex-wrap: wrap; margin-bottom: 24px; }
+.dashboard-context > div { margin-right: auto; }
+.dashboard-context h2 { font-size: 24px; font-weight: 600; }
+.dashboard-context label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.dashboard-context input { border: 1px solid #dfe4e8; padding: 6px; border-radius: 4px; }
+.dashboard-context small { width: 100%; color: #6e7b84; text-align: right; }
+.management-dashboard .kpi-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.management-dashboard .kpi { padding: 18px 14px; min-width: 0; }
+.management-dashboard .kpi strong { font-size: 24px; }
+.management-dashboard .two-columns { gap: 18px; }
+.management-dashboard .order-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.management-dashboard .widget-foot button { margin-left: 12px; color: #277eaa; }
+.management-dashboard .widget-foot button:disabled { opacity: .4; }
+@media (max-width: 1350px) { .management-dashboard .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .management-dashboard .order-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .shipzy-sidebar { width: 240px; } .shipzy-collapsed .shipzy-sidebar { width: 0; } .shipzy-collapsed .shipzy-main { margin-left: 0; width: 100%; } .shipzy-content { padding: 12px; } .management-dashboard .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .management-dashboard .order-grid { grid-template-columns: 1fr; } }
+
+.shipzy-sidebar nav.shipzy-nav-dashboard, .shipzy-sidebar nav.shipzy-nav-system { flex: 0 0 auto; overflow: visible; }
+.shipzy-sidebar nav.shipzy-nav-system { border-top: 1px solid #ffffff20; }
+.shipzy-system-label { display: block; padding: 12px 18px 4px; font-size: 10px; letter-spacing: .1em; color: #a2aebb; }
+.shipzy-collapsed .shipzy-system-label { display: none; }
+.shipzy-profile-identity { padding: 10px; font-weight: 600; }
+.shipzy-profile-identity small { display: block; font-weight: 400; color: #667580; }
+.management-dashboard .cash-summary { flex-wrap: wrap; }
+
+.shipzy-header-feed { width: min(380px, calc(100vw - 24px)); max-height: 70vh; overflow: auto; padding: 12px; }
+.shipzy-header-feed h2 { font-weight: 600; padding: 6px; }
+.shipzy-header-feed small, .management-dashboard .currency-list small { display: block; color: #71808b; font-size: 11px; margin-top: 4px; }
+.shipzy-header-feed > button, .shipzy-header-feed p { padding: 10px; }

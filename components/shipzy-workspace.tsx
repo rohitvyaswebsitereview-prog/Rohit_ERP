@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   Menu,
   Search,
@@ -40,6 +40,7 @@ import {
   Status,
   dateLabel,
 } from './erp-ui';
+import { dashboard as ledgerDashboard } from '@/lib/domain';
 import { shipzyMenus, shipzyTitle } from '@/lib/shipzy-navigation';
 import { opMap, operationRoutes, permittedOperation } from '@/lib/operations';
 import { masterCategories } from '@/lib/masters';
@@ -57,8 +58,11 @@ import { DocumentActivity } from './document-activity';
 import { ProductImport } from './product-import';
 import { InvoicePdfs } from './invoice-pdfs';
 import { CompanyProfile } from './company-profile';
+import { HeaderFeed } from './header-feed';
+import { ManagementDashboard } from './management-dashboard';
 import { ShipmentTimeline } from './shipment-timeline';
 import { dashboardAlerts } from '@/lib/dashboard-alerts';
+import { stockAlerts } from '@/lib/stock-alerts';
 import { reportRoutes } from './operation-reports';
 const recordLink = (r: any, tab = 'General') =>
   r.kind +
@@ -97,6 +101,8 @@ export default function ShipzyWorkspace({
   onLogout: () => void;
   renderLegacy: (props: any) => React.ReactNode;
 }) {
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [updatedAt, setUpdatedAt] = useState('');
   const [url, setUrl] = useState('dashboard'),
     [fy, setFy] = useState('2026–27'),
     [records, setRecords] = useState<any[]>([]),
@@ -109,6 +115,11 @@ export default function ShipzyWorkspace({
     [results, setResults] = useState<any[] | null>(null),
     [searchError, setSearchError] = useState('');
   const { setView } = useDataView();
+  useEffect(() => {
+    const shortcut = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus(); } };
+    window.addEventListener('keydown', shortcut);
+    return () => window.removeEventListener('keydown', shortcut);
+  }, []);
   const refresh = () => setRevision((v) => v + 1);
   const go = (r: string) => {
     window.history.pushState({}, '', r === 'dashboard' ? '/' : '/' + r);
@@ -135,7 +146,7 @@ export default function ShipzyWorkspace({
     setLoading(true);
     setError('');
     api('records')
-      .then((r) => live && setRecords(r))
+      .then((r) => { if (live) { setRecords(r); setUpdatedAt(new Date().toISOString()); } })
       .catch((e) => live && setError(e.message))
       .finally(() => live && setLoading(false));
     return () => {
@@ -176,7 +187,7 @@ export default function ShipzyWorkspace({
       shell: 'shipzy',
       fy,
       records,
-      filter: '',
+      filter: params.get('filter') || params.get('currency') || '',
       refresh,
       go,
       user,
@@ -202,8 +213,9 @@ export default function ShipzyWorkspace({
             Rohit's <em>ERP</em>
           </strong>
         </a>
-        <nav aria-label="Main menu">
-          {shipzyMenus
+        {['dashboard', 'modules', 'system'].map(region => <nav key={region} className={'shipzy-nav-' + region} aria-label={region === 'system' ? 'System menu' : region === 'dashboard' ? 'Dashboard menu' : 'Main menu'}>
+          {region === 'system' && <span className="shipzy-system-label">SYSTEM</span>}
+          {shipzyMenus.filter(n => region === 'dashboard' ? n.route === 'dashboard' : region === 'system' ? ['masters','administration','settings','help'].includes(n.route) : !['dashboard','masters','administration','settings','help'].includes(n.route))
             .filter((n) =>
               n.children ? n.children.some(([r]) => can(r)) : can(n.route),
             )
@@ -214,15 +226,13 @@ export default function ShipzyWorkspace({
               return (
                 <div
                   key={n.route}
-                  className={active ? 'shipzy-nav-active' : ''}
+                  className={(active ? 'shipzy-nav-active ' : '') + (['masters', 'administration', 'settings', 'help'].includes(n.route) ? 'shipzy-system-item' : '')}
                 >
                   <button
                     title={n.title}
                     onClick={() =>
                       n.children
-                        ? (setCollapsed(false),
-                          setExpanded(expanded === n.route ? '' : n.route),
-                          ['masters', 'logistics-master'].includes(n.route) && go(n.route))
+                        ? setExpanded(expanded === n.route ? '' : n.route)
                         : go(n.route)
                     }
                     aria-expanded={
@@ -233,11 +243,13 @@ export default function ShipzyWorkspace({
                     <span>{n.title}</span>
                     {n.children && <ChevronDown size={14} />}
                   </button>
-                  {n.children && expanded === n.route && !collapsed && (
+                  {n.children && expanded === n.route && (
                     <div className="shipzy-submenu">
                       {n.children
                         .filter(([r]) => can(r))
-                        .map(([r, l]) => (
+                        .map(([r, l, section], index, entries) => (
+                          <div key={r + index}>
+                          {(index === 0 || entries[index - 1][2] !== section) && <span className="shipzy-submenu-heading">{section}</span>}
                           <button
                             key={r}
                             aria-current={route === r ? 'page' : undefined}
@@ -245,14 +257,14 @@ export default function ShipzyWorkspace({
                             onClick={() => go(r)}
                           >
                             {l}
-                          </button>
+                          </button></div>
                         ))}
                     </div>
                   )}
                 </div>
               );
             })}
-        </nav>
+        </nav>)}
       </aside>
       {!collapsed && <button className="shipzy-mobile-scrim" aria-label="Close navigation" onClick={() => setCollapsed(true)} />}
       <div className="shipzy-main">
@@ -266,8 +278,9 @@ export default function ShipzyWorkspace({
           <h1>{name}</h1>
           <form onSubmit={find}>
             <Input
+              ref={searchRef}
               aria-label="Search ERP"
-              placeholder="Search invoices, products, settings and more"
+              placeholder="Search invoices, customers, products… (Ctrl+K)"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -277,43 +290,36 @@ export default function ShipzyWorkspace({
           </form>
           <label className="shipzy-year">
             <span className="sr-only">Financial year</span>
-            <select value={fy} onChange={(e) => setFy(e.target.value)}>
+            <select value={fy} onChange={(e) => e.target.value === "manage" ? go("settings") : setFy(e.target.value)}>
               {['2026–27', '2025–26', '2024–25'].map((y) => (
                 <option key={y} value={y}>
-                  Year {y}
+                  FY {y}
                 </option>
               ))}
+              <option value="manage">Manage Financial Years →</option>
             </select>
           </label>
+          <button title={updatedAt ? "Last refreshed " + new Date(updatedAt).toLocaleString("en-IN") : "Refresh data"} aria-label="Refresh data" onClick={refresh}><RefreshCw size={21} /></button>
+          <HeaderFeed type="activity" fy={fy} revision={revision} go={go} role={user.role} />
+          <HeaderFeed type="notifications" fy={fy} revision={revision} go={go} role={user.role} />
           <button
-            title="Activity"
-            aria-label="Activity"
-            onClick={() => go(user.role === 'Admin' ? 'audit' : 'tasks')}
-          >
-            <Clock size={23} />
-          </button>
-          <button
-            title="Master settings"
-            aria-label="Master settings"
-            onClick={() => go('masters')}
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => go('settings')}
           >
             <Settings size={23} />
-          </button>
-          <button
-            title="Alerts"
-            aria-label="Alerts"
-            onClick={() => go('tasks')}
-          >
-            <Bell size={23} />
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger render={<button aria-label="User menu" />}>
               <UserRound size={24} />
             </DropdownMenuTrigger>
             <DropdownMenuContent>
+              <div className="shipzy-profile-identity">{user.name}<small>{user.email}</small></div>
               <DropdownMenuItem onClick={() => go('profile')}>
-                {user.name}
+                My Profile · {user.name}
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => go('profile')}>Change Password</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => go('settings')}>Preferences</DropdownMenuItem>
               <DropdownMenuItem
                 onClick={async () => {
                   await api('logout', {});
@@ -377,7 +383,7 @@ export default function ShipzyWorkspace({
               refreshParent={refresh}
             />
           ) : route === 'dashboard' ? (
-            <ShipzyDashboard records={records} fy={fy} go={go} />
+            <ManagementDashboard records={records} fy={fy} role={user.role} revision={revision} go={go} refresh={refresh} updatedAt={updatedAt} />
           ) : ['masters', 'logistics-master'].includes(route) ? (
             <ShipzyMasters
               records={records}
@@ -498,6 +504,18 @@ function ShipzyDashboard({
   fy: string;
   go: any;
 }) {
+  const [stock, setStock] = useState<any[]>([]);
+  const [stockError, setStockError] = useState('');
+  const [stockLoading, setStockLoading] = useState(true);
+  const [stockRevision, setStockRevision] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setStockLoading(true); setStockError('');
+    api('operations/stock').then(data => { if (live) setStock(data); })
+      .catch(e => { if (live) { setStock([]); setStockError(e.message); } })
+      .finally(() => { if (live) setStockLoading(false); });
+    return () => { live = false; };
+  }, [records, stockRevision]);
   const [q, setQ] = useState(''),
     [product, setProduct] = useState(''),
     [allAlerts, setAllAlerts] = useState(false),
@@ -524,7 +542,7 @@ function ShipzyDashboard({
       .filter((r) => bucket(r) === b)
       .reduce((s, r) => s + r.balance, 0),
   }));
-  const allDashboardAlerts = dashboardAlerts(records, fy, todayIso);
+  const allDashboardAlerts = [...dashboardAlerts(records, fy, todayIso), ...stockAlerts(records, stock)];
   const alerts = allDashboardAlerts.filter(a => alertGroup === 'All' || a.group === alertGroup);
   const products = records.filter((r) => r.kind === 'products');
   const selected = product;
@@ -545,10 +563,13 @@ function ShipzyDashboard({
           </Button>
         </header>
         <nav className="shipzy-tabs" aria-label="Alert category">
-          {['All', 'Receivables', 'Shipments', 'Tasks'].map(group => <button key={group} className={alertGroup === group ? 'active' : ''} onClick={() => { setAlertGroup(group); setAllAlerts(false); }}>
+          {['All', 'Receivables', 'Shipments', 'Tasks', 'Stock'].map(group => <button key={group} className={alertGroup === group ? 'active' : ''} onClick={() => { setAlertGroup(group); setAllAlerts(false); }}>
             {group} ({allDashboardAlerts.filter(a => group === 'All' || a.group === group).length})
           </button>)}
         </nav>
+        {stockLoading && <p className="shipzy-muted" role="status">Checking current stock balances…</p>}
+        {stockError && <div className="error-box" role="alert">Stock alerts unavailable: {stockError} <Button variant="outline" onClick={() => setStockRevision(v => v + 1)}>Retry stock check</Button></div>}
+        {alertGroup === 'Stock' && <p className="shipzy-muted">Current recorded stock across all warehouses, independent of financial year. Products without recorded stock balances are not treated as out of stock.</p>}
         {alerts.length ? (
           <div className="shipzy-alert-grid">
             {(allAlerts ? alerts : alerts.slice(0, 8)).map((a) => (
@@ -1886,8 +1907,10 @@ export function ShipzyPayments({
 }) {
   const initial = new URLSearchParams(initialQuery);
   const [partner, setPartner] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [from, setFrom] = useState(initial.get('from') || '');
+  const [to, setTo] = useState(initial.get('to') || '');
+  const postedBasis = initial.get('basis') === 'posted';
+  const asOf = to || initial.get('asOf') || new Date().toISOString().slice(0,10);
   const partnerKind = payable ? 'vendors' : 'customers';
   const allowedWrite = permittedOperation(opMap[payable ? 'payments' : 'receipts'], role, true);
   const invalidRange = !!from && !!to && from > to;
@@ -1905,13 +1928,15 @@ export function ShipzyPayments({
   useEffect(() => setPage(0), [tab, currency, q, fy, ageing, outstanding, partner, from, to]);
   const status = (r: any) =>
     r.balance <= 0 ? 'Paid' : r.settled > 0 ? 'Partially Paid' : 'Unpaid';
-  const rows = financial360(records, fy).lines.filter(
+  const ledger = postedBasis ? ledgerDashboard(records, '0001-01-01', asOf) : null;
+  const paymentRows = ledger ? (payable ? ledger.payables : ledger.receivables).map((r: any) => ({...r, type:payable ? 'Payable' : 'Receivable', balance:r.outstanding, settled:r.amount-r.outstanding, posting:'Posted'})) : financial360(records, fy).lines;
+  const rows = paymentRows.filter(
     (r) =>
-      r.fy === fy &&
+      (postedBasis || r.fy === fy) &&
       r.type === (payable ? 'Payable' : 'Receivable') &&
       matchesHeader(r) &&
       (!outstanding || r.balance > 0) &&
-      (!ageing || receivableAgeing(records.find(inv => inv.id === r.id)?.dueDate) === ageing) &&
+      (!ageing || receivableAgeing(records.find(inv => inv.id === r.id)?.dueDate, asOf) === ageing) &&
       r.currency === currency &&
       (tab === 'All' || status(r) === tab) &&
       JSON.stringify(r).toLowerCase().includes(q.toLowerCase()),
@@ -1941,6 +1966,7 @@ export function ShipzyPayments({
           ),
         )}
       </nav>
+      {postedBasis && <p className="scope-note">Posted invoice balances as at {asOf}. Includes outstanding invoices from earlier financial years; excludes unallocated ledger entries.</p>}
       <div className="shipzy-table-toolbar">
         <label>{payable ? 'Supplier' : 'Customer'} <select value={partner} onChange={e => setPartner(e.target.value)}><option value="">All</option>{records.filter(r => r.kind === partnerKind).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
         <label>From <Input type="date" value={from} onChange={e => setFrom(e.target.value)} /></label>

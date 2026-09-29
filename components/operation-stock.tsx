@@ -15,8 +15,10 @@ export default function OperationStock() {
   const [rows, setRows] = useState<any[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(''),
-    [query, setQuery] = useState('');
+    [query, setQuery] = useState(''),
+    [productId, setProductId] = useState('');
   useEffect(() => {
+    setProductId(new URLSearchParams(window.location.search).get('product') || '');
     Promise.all([api('operations/stock'), api('operations/data')])
       .then(([stock, data]) =>
         setRows(
@@ -36,11 +38,12 @@ export default function OperationStock() {
   }, []);
   if (loading) return <Loading />;
   const filtered = rows.filter((r) =>
-    (r.product + ' ' + r.warehouse).toLowerCase().includes(query.toLowerCase()),
+    (!productId || r.product_id === productId) && (r.product + ' ' + r.warehouse).toLowerCase().includes(query.toLowerCase()),
   );
   return (
     <div className="op-workspace">
       {error && <p className="error-box">{error}</p>}
+      {productId && <div className="op-toolbar"><span>Product: {rows.find(r => r.product_id === productId)?.product || 'Selected product'}</span><Button variant="outline" onClick={() => { setProductId(''); window.history.replaceState({}, '', window.location.pathname); }}>Show all products</Button></div>}
       <div className="op-toolbar">
         <Input
           aria-label="Search stock"
@@ -73,7 +76,7 @@ export default function OperationStock() {
         require a reviewed opening adjustment.
       </p>
       <section className="widget">
-        {rows.length ? (
+        {filtered.length ? (
           <Table>
             <TableHeader>
               <TableRow>

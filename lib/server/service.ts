@@ -678,6 +678,7 @@ export async function handle(req: Request) {
         end,
       );
       if (u.role === 'Logistics') {
+        result.productContribution = [];
         result.totals = [];
         result.trend = [];
         result.receivables = [];

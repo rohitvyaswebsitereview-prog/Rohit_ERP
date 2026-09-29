@@ -11,6 +11,9 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import assert from 'node:assert/strict';
 import {shipzyMenus} from './lib/shipzy-navigation';
+import {kinds, dashboard} from './lib/domain';
+import {dashboardPeriod} from './lib/dashboard-period';
+import {stockAlerts} from './lib/stock-alerts';
 import {dashboardAlerts} from './lib/dashboard-alerts';
 import {CompanyProfile} from './components/company-profile';
 import {invoicePdfVersions} from './lib/invoice-pdfs';
@@ -25,6 +28,37 @@ import {ShipmentTimeline} from './components/shipment-timeline';
 import {shipmentAlerts} from './lib/shipment-alerts';
 import {ShipzyRegister,ShipzyMasters,ShipzyPayments} from './components/shipzy-workspace';
 let count=0;function check(label,fn){fn();count++;console.log('PASS '+label)}
+check('Product contribution requires posted matching cost evidence',()=>{
+ const invoice={id:'i',kind:'invoices',status:'Posted',date:'2026-04-01',currency:'INR',amount:1000,lines:[{productId:'p',quantity:2,basic:1000}]};
+ const stock={id:'m',kind:'movements',status:'Posted',date:'2026-04-01',currency:'INR',productId:'p',sourceId:'i',operationStock:true,direction:'Issue',quantity:2,stockValue:600};
+ const result=dashboard([invoice,stock],'2026-04-01','2026-09-29');
+ assert.equal(result.productContribution[0].profit,400);
+ assert.equal(dashboard([invoice,{...stock,currency:'USD'}],'2026-04-01','2026-09-29').productContribution.length,0);
+ assert.equal(dashboard([invoice,{...stock,quantity:1}],'2026-04-01','2026-09-29').productContribution.length,0);
+});
+check('Dashboard settlements match invoice and currency and respect effective dates',()=>{
+ const invoice={id:'i',kind:'invoices',date:'2026-04-01',amount:10000,currency:'USD',status:'Posted'};
+ const payment={id:'p',kind:'receipts',sourceId:'i',date:'2026-04-02',amount:2500,settledAmount:3000,currency:'USD',status:'Posted'};
+ const result=dashboard([invoice,payment,{...payment,id:'wrong',currency:'INR'},{...payment,id:'future',date:'2026-10-01'}],'2026-04-01','2026-09-29');
+ assert.equal(result.receivables[0].outstanding,7000);
+ assert.equal(result.receivables[0].bucket,'Due date missing');
+});
+check('Dashboard periods enforce fiscal boundaries and reject invalid custom dates',()=>{
+ assert.deepEqual(dashboardPeriod('2026–27','This Quarter','2026-09-29'),{start:'2026-07-01',end:'2026-09-29',valid:true});
+ assert.equal(dashboardPeriod('2026–27','Custom Period','2026-09-29','2026-02-30','2026-04-01').valid,false);
+ assert.equal(dashboardPeriod('2025–26','This Financial Year','2026-09-29').end,'2026-03-31');
+});
+
+check('Stock alerts sum recorded warehouse quantities without treating missing balances as zero',()=>{
+  const products=[{id:'a',kind:'products',name:'A',status:'Active',reorderPoint:5},{id:'b',kind:'products',name:'B',status:'Active'}, {id:'unknown',kind:'products',status:'Active'}, {id:'disabled',kind:'products',status:'Inactive'}];
+  const balances=[{product_id:'a',quantity:2},{product_id:'a',quantity:3},{product_id:'b',quantity:0},{product_id:'disabled',quantity:0}];
+  const alerts=stockAlerts(products,balances);
+  assert.deepEqual(alerts.map(a=>a.id),['stock-a','stock-b']);
+  assert.ok(alerts[0].detail.includes('5 units'));
+  assert.ok(alerts[1].route.endsWith('product=b'));
+  assert.equal(stockAlerts(products,[...balances,{product_id:'a',quantity:1}]).length,1);
+  assert.equal(stockAlerts(products,[]).length,0);
+});
 check('Dashboard alerts include currencies independently and exclude drafts and completed tasks',()=>{
   const inv={id:'a',kind:'invoices',fy:'2026–27',status:'Posted',amount:10000,currency:'USD',dueDate:'2026-04-01',reference:'A'};
   const task={id:'t',kind:'tasks',fy:inv.fy,status:'Open',dueDate:'2026-04-01',name:'Review invoice'};
@@ -95,13 +129,12 @@ check('Ageing boundaries use due date rather than invoice date',()=>{
     assert.equal(receivableAgeing(new Date(Date.parse(today)-days*86400000).toISOString().slice(0,10),today),bucket);
   }
 });
-const custom=new Set(['dashboard','export-docs','pre-shipment','post-shipment','packing-drive','shipment-checklist','documents-drive','costing','reports','masters','logistics-master','profile','users','administration-permissions','receivables','payables','inventory-stock-register']);
-check('All master catalog destinations are directly reachable in the expanded sidebar',()=>{
-  const destinations=shipzyMenus.filter(m=>['masters','logistics-master'].includes(m.route)).flatMap(m=>m.children||[]).map(([r])=>r);
-  for(const category of masterCategories) for(const item of category.items) assert.ok(destinations.includes(item.route),item.route);
-  assert.ok(shipzyMenus.some(m=>m.route==='einvoices'));
+const custom=new Set(['dashboard','export-docs','pre-shipment','post-shipment','packing-drive','shipment-checklist','documents-drive','costing','reports','masters','logistics-master','profile','users','administration-permissions','receivables','payables','inventory-stock-register','workbook-data','data-dictionary','architecture-map','stock','movements','journal','cash','accounts','profitability','sales-report','trial-balance','exceptions','tasks','documents','audit','activity','approvals','settings','help','import','production']);
+check('Final dashboard document domain order and Masters entry are preserved',()=>{
+ assert.deepEqual(shipzyMenus.map(m=>m.title),['Dashboard','Sales & Export','Purchase','Import','Inventory','Logistics','Production','Finance','Compliance','Documents','Tasks & Checklist','Costing & Profitability','Reports','Masters','Administration','Settings','Help & Support']);
+ assert.equal(shipzyMenus.find(m=>m.route==='masters').children,undefined);
 });
-check('Every sidebar destination resolves to a working screen',()=>{for(const menu of shipzyMenus)for(const r of menu.children?menu.children.map(c=>c[0]):[menu.route])assert.ok(opMap[operationRoutes[r]||r]||custom.has(r),'Missing '+r)});
+check('Every sidebar destination resolves to a working screen',()=>{for(const menu of shipzyMenus)for(const r of menu.children?menu.children.map(c=>c[0]):[menu.route])assert.ok(opMap[operationRoutes[r]||r]||custom.has(r)||kinds.includes(r),'Missing '+r)});
 const r={id:'i',kind:'invoices',reference:'INV-TEST',fy:'2026–27',date:'2026-04-01',status:'Imported',importLocked:true,customerName:'Customer <test>',currency:'INR',amount:118000,lines:[{description:'Excavator',quantity:1,uom:'NOS'}]};
 check('Product register sorts the full result before pagination and shows identifying fields',()=>{
   const records=Array.from({length:12},(_,i)=>({id:'p'+i,kind:'products',name:'Model '+(12-i),sku:'SKU-'+(12-i),status:'Active',unitId:'unit'}));

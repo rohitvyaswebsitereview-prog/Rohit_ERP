@@ -12,7 +12,7 @@ export function dashboardAlerts(records: any[], fy: string, today: string) {
       if (!invoice || (!invoice.importLocked && !['Posted', 'Imported'].includes(invoice.status))) return [];
       const bucket = receivableAgeing(invoice.dueDate, today);
       if (['Current', 'No due date'].includes(bucket)) return [];
-      return [{ id: 'due-' + line.id, severity: bucket === '90+' ? 'Critical' : 'Warning',
+      return [{ id: 'due-' + line.id, dueDate:invoice.dueDate, severity: bucket === '90+' ? 'Critical' : 'Warning',
         title: line.reference + ' receivable overdue',
         detail: `${line.currency} ${(line.balance / 100).toFixed(2)} pending · ${bucket} days`,
         route: invoice.kind + '?record=' + encodeURIComponent(line.id),
@@ -21,7 +21,7 @@ export function dashboardAlerts(records: any[], fy: string, today: string) {
   const tasks = records.filter(r => r.kind === 'tasks' && r.fy === fy && !inactive(r) &&
     !['Completed', 'Closed', 'Done', 'Resolved'].includes(r.status) &&
     !['Current', 'No due date'].includes(receivableAgeing(r.dueDate, today)))
-    .map(r => ({ id: 'task-' + r.id, severity: 'Attention', title: entityLabel(r) + ' is overdue',
+    .map(r => ({ id: 'task-' + r.id, dueDate:r.dueDate, severity: 'Attention', title: entityLabel(r) + ' is overdue',
       detail: `Due ${r.dueDate}${r.owner ? ' · ' + r.owner : ''}`,
       route: 'tasks?record=' + encodeURIComponent(r.id), group: 'Tasks' }));
   const severity: Record<string, number> = { Critical: 0, Warning: 1, Attention: 2 };

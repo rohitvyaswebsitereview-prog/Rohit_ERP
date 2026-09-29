@@ -1,5 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { dashboardAlerts } from '@/lib/dashboard-alerts';
+import { stockAlerts } from '@/lib/stock-alerts';
+import { canOpenWorkspace } from '@/lib/workspace-navigation';
 import {
   ArrowUpRight,
   TrendingUp,
@@ -101,7 +104,8 @@ export default function Dashboard({
 }: Props) {
   const query = `dashboard?fy=${encodeURIComponent(fy)}&start=${start}&end=${end}`;
   const financial = useWidget(query, revision),
-    operations = useWidget(query, revision),
+    operations = useWidget('relationships/workspace?view=All%20data&fy=' + encodeURIComponent(fy), revision),
+    stock = useWidget('operations/stock', revision),
     attention = useWidget(
       `notifications?fy=${encodeURIComponent(fy)}`,
       revision,
@@ -109,7 +113,10 @@ export default function Dashboard({
     activity = useWidget('activity', revision);
   const [currency, setCurrency] = useState('INR'),
     [status, setStatus] = useState('All'),
-    [search, setSearch] = useState('');
+    [search, setSearch] = useState(''),
+    [orderPage, setOrderPage] = useState(0),
+    [allAlerts, setAllAlerts] = useState(false);
+  useEffect(() => setOrderPage(0), [status, search, fy]);
   const data = financial.data || {},
     total = data.totals?.find((t: any) => t.currency === currency) || {
       sales: 0,
@@ -121,25 +128,22 @@ export default function Dashboard({
       payments: 0,
       margin: null,
     };
-  const orders = (operations.data?.orders || []).filter(
-    (r: any) =>
-      (status === 'All' || r.status === status) &&
-      [
-        r.reference,
-        r.destination,
-        records.find((x) => x.id === r.partnerId)?.name,
-      ].some((x) =>
-        String(x || '')
-          .toLowerCase()
-          .includes(search.toLowerCase()),
-      ),
-  );
-  const alerts = [...(attention.data || [])].sort(
-    (a: any, b: any) =>
-      (({ Critical: 0, Warning: 1, Attention: 2 })[a.severity as string] ?? 3) -
-        ({ Critical: 0, Warning: 1, Attention: 2 }[b.severity as string] ??
-          3) || a.dueDate.localeCompare(b.dueDate),
-  );
+  const running = (operations.data || []).filter((r: any) => ['invoices','proformas','sales-orders'].includes(r.kind) && (!r.date || r.date <= end) && !['Completed','Closed','Cancelled','Rejected'].includes(r.status)).map((r: any) => {
+    const source: any = records.find(x => x.id === r.id) || {};
+    const stages = r.stages || [];
+    const completed = stages.filter((s: any) => s.status === 'Completed').length;
+    return { ...source, ...r, stage: completed, totalStages: stages.length || 1,
+      stageName: r.next?.label || r.status, owner: r.next?.owner, dueDate: r.next?.dueDate,
+      delayed: !!r.next?.dueDate && r.next.dueDate < new Date().toISOString().slice(0,10),
+      inTransit: r.inTransit || /transit|sailed/i.test(source.sourceStatus || source.status || '') || !!source.departureDate && !source.arrivalDate };
+  });
+  const orders = running.filter((r: any) =>
+    (status === 'All' || status === 'In Transit' && r.inTransit || status === 'Delayed' && r.delayed || status === 'Pending Action' && !!r.next?.action) &&
+    [r.reference,r.party,r.destination,r.owner].join(' ').toLowerCase().includes(search.toLowerCase()));
+  const generated = [...dashboardAlerts(records, fy, new Date().toISOString().slice(0,10)), ...stockAlerts(records, stock.data || [])]
+    .map(a => ({...a, name:a.title, category:a.group, dueDate: ('dueDate' in a ? a.dueDate : '') || ''}));
+  const alerts = [...(attention.data || []).map((a: any) => ({...a, route:'exceptions?record='+encodeURIComponent(a.id)})), ...generated].sort(
+    (a: any, b: any) => (({Critical:0,Warning:1,Attention:2} as any)[a.severity] ?? 3) - (({Critical:0,Warning:1,Attention:2} as any)[b.severity] ?? 3) || (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
   const trend = (data.trend || [])
     .filter((r: any) => r.currency === currency)
     .sort((a: any, b: any) => a.month.localeCompare(b.month))
@@ -172,8 +176,8 @@ export default function Dashboard({
     ['Cash & Bank', total.cash, 'cash', Landmark, 'Ledger balance'],
     [
       'Open Orders',
-      operations.data?.orders?.length || 0,
-      'orders',
+      running.length,
+      'transactions',
       Package,
       'Active this financial year',
     ],
@@ -188,7 +192,7 @@ export default function Dashboard({
             label="Display currency"
             value={currency}
             onChange={setCurrency}
-            options={['INR', 'USD', 'EUR', 'GBP', 'AED']}
+            options={[...new Set(['INR', 'USD', ...(data.totals || []).map((t: any) => t.currency)])]}
           />
         )}
       </div>
@@ -224,7 +228,7 @@ export default function Dashboard({
         </div>
         {financeVisible && (
           <div className="data-basis">
-            {currency} amounts · No currency conversion · Balances as at{' '}
+            {currency} amounts · Posted ledger only; imported workbook history is not posted · No currency conversion · Balances as at{' '}
             {dateLabel(end)}
           </div>
         )}
@@ -235,18 +239,20 @@ export default function Dashboard({
       </div>
       <Widget
         title="Your attention, where it matters"
-        onView={() => go('exceptions', 'Open')}
+        onView={() => setAllAlerts(v => !v)}
         onRefresh={attention.retry}
         onExport={() => exportCSV(alerts, 'exceptions')}
       >
-        <State state={attention}>
+        {stock.error && <p role="alert">Stock alerts unavailable. <button onClick={stock.retry}>Retry stock</button></p>}
+        {attention.error && <p role="alert">Saved alerts unavailable. <button onClick={attention.retry}>Retry alerts</button></p>}
+        <State state={alerts.length ? {...attention, loading:false, error:''} : attention}>
           {alerts.length ? (
             <div className="attention-grid">
-              {alerts.slice(0, 7).map((a: any) => (
+              {alerts.slice(0, allAlerts ? alerts.length : 7).map((a: any) => (
                 <button
                   key={a.id}
                   className={'attention-item ' + a.severity.toLowerCase()}
-                  onClick={() => go('exceptions', a.reference)}
+                  onClick={() => go(a.route)}
                 >
                   <span className="attention-icon">
                     <AlertTriangle size={18} />
@@ -254,7 +260,7 @@ export default function Dashboard({
                   <div>
                     <strong>{a.name}</strong>
                     <span>
-                      {a.category} · Due {dateLabel(a.dueDate)}
+                      {a.category}{a.dueDate ? ' · Due ' + dateLabel(a.dueDate) : ''}{a.detail ? ' · ' + a.detail : ''}
                     </span>
                   </div>
                   <ArrowUpRight size={17} />
@@ -282,7 +288,7 @@ export default function Dashboard({
       <Widget
         title="Orders in motion"
         subtitle="Current progress across active orders"
-        onView={() => go('orders')}
+        onView={() => go('transactions')}
         onRefresh={operations.retry}
         onExport={() => exportCSV(orders, 'running-orders')}
       >
@@ -307,20 +313,20 @@ export default function Dashboard({
           {orders.length ? (
             <>
               <div className="order-grid">
-                {orders.slice(0, 6).map((r: any) => (
+                {orders.slice(orderPage * 6, orderPage * 6 + 6).map((r: any) => (
                   <button
                     className="order-card"
                     key={r.id}
-                    onClick={() => go('orders', r.reference)}
+                    onClick={() => go(r.kind + '?record=' + encodeURIComponent(r.id))}
                   >
                     <div className="order-top">
                       <strong>{r.reference}</strong>
                       <Status value={r.status} />
                     </div>
                     <h3>
-                      {records.find((x) => x.id === r.partnerId)?.name ||
-                        'Customer'}
+                      {r.party || records.find((x) => x.id === r.partnerId)?.name || 'Customer'}
                     </h3>
+                    <small>Order date {dateLabel(r.date)}</small>
                     <p>
                       <Ship size={14} />
                       {r.destination}
@@ -351,8 +357,9 @@ export default function Dashboard({
                 ))}
               </div>
               <p className="widget-foot">
-                Showing {Math.min(6, orders.length)} of {orders.length} active
-                orders
+                Showing {orderPage * 6 + 1}–{Math.min(orderPage * 6 + 6, orders.length)} of {orders.length} active orders
+                <button disabled={!orderPage} onClick={() => setOrderPage(p => p - 1)}>Previous</button>
+                <button disabled={(orderPage + 1) * 6 >= orders.length} onClick={() => setOrderPage(p => p + 1)}>Next</button>
               </p>
             </>
           ) : (
@@ -376,7 +383,7 @@ export default function Dashboard({
             <Widget
               title="Sales & gross profit"
               subtitle={`${currency} · Monthly trend`}
-              onView={() => go('profitability')}
+              onView={() => go('profitability', currency)}
               onRefresh={financial.retry}
               onExport={() => exportCSV(trend, 'sales-profit-trend')}
             >
@@ -460,13 +467,13 @@ export default function Dashboard({
             <Widget
               title="Product contribution"
               subtitle="Gross profit by product"
-              onView={() => go('profitability')}
+              onView={() => go('profitability', currency)}
               onRefresh={financial.retry}
             >
-              <Blank
-                title="Product costing is not configured"
-                detail="Product profit will be available when invoice lines and approved cost allocation are implemented. No estimated profit is shown."
-              />
+              <State state={financial}>
+                {(data.productContribution || []).some((p: any) => p.currency === currency) ? <div className="currency-list">{data.productContribution.filter((p: any) => p.currency === currency).slice(0,5).map((p: any) => <button key={p.productId} onClick={() => go('products?record=' + encodeURIComponent(p.productId))}><span>{p.name}<small>Sales {money(p.sales,currency)} · Margin {p.sales ? (p.profit/p.sales*100).toFixed(1)+'%' : '—'}</small></span><strong>{money(p.profit,currency)}</strong></button>)}</div> : <Blank title="No allocated product profit" detail="Post invoices with matching stock costs to see product contribution. Missing costs are never estimated." />}
+                <p className="widget-foot">Posted invoice revenue less matching posted stock costs. Unallocated journals are excluded.</p>
+              </State>
             </Widget>
           </div>
           <div className="section-eyebrow">
@@ -476,14 +483,14 @@ export default function Dashboard({
             <Widget
               title="Cash flow"
               subtitle={`${currency} · ${dateLabel(start)} – ${dateLabel(end)}`}
-              onView={() => go('cash')}
+              onView={() => go('cash', currency)}
               onRefresh={financial.retry}
               onExport={() => exportCSV(trend, 'cash-flow')}
             >
               <State state={financial}>
                 <div className="cash-summary">
                   <div>
-                    <span>Receipts</span>
+                    <span>Opening balance</span><strong>{money(total.cash - total.receipts + total.payments, currency, true)}</strong></div><div><span>Closing balance</span><strong>{money(total.cash, currency, true)}</strong></div><div><span>Receipts</span>
                     <strong>{money(total.receipts, currency, true)}</strong>
                   </div>
                   <div>
@@ -542,7 +549,7 @@ export default function Dashboard({
             <Widget
               title="Receivables ageing"
               subtitle={`Open invoice amounts · ${currency}`}
-              onView={() => go('receivables')}
+              onView={() => go('receivables', currency)}
               onRefresh={financial.retry}
               onExport={() =>
                 exportCSV(data.receivables || [], 'receivables-ageing')
@@ -554,7 +561,7 @@ export default function Dashboard({
                   <strong>{money(total.receivables, currency, true)}</strong>
                 </div>
                 <div className="ageing-bars">
-                  {['Current', '1–30', '31–60', '61–90', '90+'].map(
+                  {['Current', '1–30', '31–60', '61–90', '90+', 'Due date missing'].map(
                     (bucket, i) => {
                       const value = (data.receivables || [])
                         .filter(
@@ -571,10 +578,10 @@ export default function Dashboard({
                       return (
                         <button
                           key={bucket}
-                          onClick={() => go('receivables', bucket)}
+                          onClick={() => go('receivables?currency=' + currency + '&ageing=' + encodeURIComponent(bucket.replaceAll('–', '-')))}
                         >
                           <span>
-                            {bucket === 'Current' ? bucket : bucket + ' days'}
+                            {['Current','Due date missing'].includes(bucket) ? bucket : bucket + ' days'}
                           </span>
                           <div className="age-track">
                             <i
@@ -596,6 +603,7 @@ export default function Dashboard({
                     },
                   )}
                 </div>
+                <div className="currency-list">{(data.receivables || []).filter((r: any) => r.currency === currency).sort((a: any,b: any) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999')).slice(0,5).map((r: any) => <button key={r.id} onClick={() => go(r.kind + '?record=' + encodeURIComponent(r.id))}><span>{r.reference}<small>{r.dueDate ? 'Due ' + dateLabel(r.dueDate) : 'Due date missing'}</small></span><strong>{money(r.outstanding,currency)}</strong></button>)}</div>
                 <p className="widget-foot">
                   Invoice ageing excludes unallocated journal settlements.
                 </p>
@@ -605,12 +613,13 @@ export default function Dashboard({
           <div className="two-columns">
             <Widget
               title="Payables"
-              subtitle="Open bills by currency"
-              onView={() => go('payables')}
+              subtitle={"Open bills ageing · " + currency}
+              onView={() => go('payables', currency)}
               onRefresh={financial.retry}
               onExport={() => exportCSV(data.payables || [], 'payables')}
             >
               <State state={financial}>
+                <div className="currency-list">{['Current','1–30','31–60','61–90','90+','Due date missing'].map(bucket => <button key={bucket} onClick={() => go('payables?currency=' + currency + '&ageing=' + encodeURIComponent(bucket.replaceAll('–','-')))}><span>{bucket}</span><strong>{money((data.payables || []).filter((r: any) => r.currency === currency && r.bucket === bucket).reduce((sum: number,r: any) => sum + r.outstanding,0),currency)}</strong></button>)}</div>
                 {data.totals?.length ? (
                   <div className="currency-list">
                     {data.totals.map((t: any) => (
@@ -635,7 +644,7 @@ export default function Dashboard({
             <Widget
               title="Currency position"
               subtitle="Original currencies · No estimated conversions"
-              onView={() => go('cash')}
+              onView={() => go('cash', currency)}
               onRefresh={financial.retry}
             >
               <State state={financial}>
@@ -668,7 +677,7 @@ export default function Dashboard({
       </div>
       <Widget
         title="The latest across your workspace"
-        onView={() => go('audit')}
+        onView={() => go('activity')}
         onRefresh={activity.retry}
         onExport={() => exportCSV(activity.data || [], 'activity')}
       >
@@ -678,11 +687,11 @@ export default function Dashboard({
               {activity.data.slice(0, 6).map((a: any) => (
                 <button
                   key={a.id}
-                  onClick={() => go(a.kind === 'users' ? 'users' : a.kind)}
+                  disabled={!canOpenWorkspace(a.kind, role)} onClick={() => go(a.kind === 'users' ? 'users' : a.kind + (a.record_id ? '?record=' + encodeURIComponent(a.record_id) : ''))}
                 >
                   <span className="activity-dot" />
                   <div>
-                    <strong>{a.detail}</strong>
+                    <strong>{a.action} · {a.kind}</strong>
                     <span>
                       {a.actor || 'System'} · {a.action}
                     </span>

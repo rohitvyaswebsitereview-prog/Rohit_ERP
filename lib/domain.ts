@@ -164,6 +164,23 @@ export function dashboard(records: RecordData[], start: string, end: string) {
       payments: t.reduce((s, x) => s + x.payments, 0),
     };
   });
+  // Attribute only posted invoice lines with matching posted stock issues. Never estimate missing costs.
+  const contribution = new Map<string, any>();
+  for (const invoice of records.filter(r => ['invoices','domestic-invoices'].includes(r.kind) && r.status === 'Posted' && period(r))) {
+    const products = [...new Set((invoice.lines || []).map((l: any) => l.productId).filter(Boolean))];
+    for (const productId of products) {
+      const lines = invoice.lines.filter((l: any) => l.productId === productId);
+      const issues = records.filter(r => r.kind === 'movements' && r.sourceId === invoice.id && r.productId === productId && r.currency === invoice.currency && r.status === 'Posted' && r.operationStock && r.direction === 'Issue' && r.date <= end);
+      const quantity = lines.reduce((s: number,l: any) => s + Number(l.quantity),0);
+      if (!issues.length || !lines.every((l: any) => Number.isFinite(l.basic)) || Math.abs(issues.reduce((s,r) => s + Number(r.quantity),0) - quantity) > 0.000001 || !issues.every(r => Number.isFinite(r.stockValue))) continue;
+      const key = invoice.currency + '|' + productId;
+      const row = contribution.get(key) || {productId, name: records.find(r => r.id === productId)?.name || lines[0].description || 'Product', currency:invoice.currency, sales:0,cost:0,profit:0};
+      row.sales += lines.reduce((s: number,l: any) => s + l.basic,0);
+      row.cost += issues.reduce((s,r) => s + r.stockValue,0);
+      row.profit = row.sales - row.cost;
+      contribution.set(key,row);
+    }
+  }
   const ageingRows = (kind: string) =>
     records
       .filter(
@@ -182,7 +199,8 @@ export function dashboard(records: RecordData[], start: string, end: string) {
           records
             .filter(
               (p) =>
-                p.invoiceId === r.id &&
+                (p.invoiceId === r.id || p.sourceId === r.id) &&
+                p.currency === r.currency &&
                 p.status === 'Posted' &&
                 p.date <= end &&
                 [
@@ -192,12 +210,13 @@ export function dashboard(records: RecordData[], start: string, end: string) {
                   'supplier-advance-adjustments',
                 ].includes(p.kind),
             )
-            .reduce((s, p) => s + p.amount, 0),
-        bucket: ageing(r.dueDate || r.date, end),
+            .reduce((s, p) => s + (p.settledAmount ?? p.amount), 0),
+        bucket: r.dueDate ? ageing(r.dueDate, end) : 'Due date missing',
       }))
       .filter((r) => r.outstanding > 0);
   return {
     totals,
+    productContribution: [...contribution.values()].sort((a,b) => b.profit-a.profit),
     trend: Object.values(trend),
     receivables: ageingRows('invoices'),
     payables: ageingRows('bills'),
