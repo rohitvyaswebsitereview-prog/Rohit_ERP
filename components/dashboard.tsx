@@ -687,7 +687,7 @@ export default function Dashboard({
               {activity.data.slice(0, 6).map((a: any) => (
                 <button
                   key={a.id}
-                  disabled={!canOpenWorkspace(a.kind, role)} onClick={() => go(a.kind === 'users' ? 'users' : a.kind + (a.record_id ? '?record=' + encodeURIComponent(a.record_id) : ''))}
+                  disabled={!canOpenWorkspace(a.kind, role)} onClick={() => go(a.kind === 'workbook-import' ? 'workbook-data' : a.kind === 'users' ? 'users' : a.kind + (a.record_id ? '?record=' + encodeURIComponent(a.record_id) : ''))}
                 >
                   <span className="activity-dot" />
                   <div>
