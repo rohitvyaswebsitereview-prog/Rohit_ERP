@@ -296,7 +296,7 @@ export default function Operations({
     d.reason = '';
     setDraft(d);
     setEditing(true);
-    setTab('Basic');
+    setTab(m.fields[0]?.section || 'Basic');
   };
   const set = (key: string, value: any) =>
     setDraft((d: any) => ({ ...d, [key]: value }));

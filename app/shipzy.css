@@ -1222,3 +1222,16 @@
 .invoice-pdf-metadata { color: #63727d; font-size: 12px; }
 .invoice-pdf-empty { flex: 1; display: grid; align-content: center; justify-items: center; gap: 8px; background: #f7f9fb; padding: 24px; text-align: center; }
 @media (max-width: 700px) { .invoice-pdf-toolbar label { width: 100%; } }
+
+.company-profile { padding: 20px; }
+.company-profile > section + section { margin-top: 20px; }
+.company-profile h3 { background: #f4f6f8; padding: 10px 12px; font-size: 14px; font-weight: 600; }
+.company-profile .shipzy-form-grid { padding: 16px 0; gap: 18px; }
+.company-branding-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding-top: 16px; }
+.company-branding-grid figure { margin: 0; min-width: 0; }
+.company-branding-grid figcaption { font-size: 13px; color: #52636e; margin-bottom: 8px; }
+.company-branding-preview { border: 1px solid #dde5ea; background: #fff; height: 170px; display: grid; place-items: center; padding: 16px; border-radius: 4px; }
+.company-branding-preview img { max-width: 100%; max-height: 135px; object-fit: contain; }
+.company-branding-preview span, .company-branding-grid small { color: #637680; font-size: 12px; }
+.company-branding-grid small { display: block; margin-top: 8px; }
+@media (max-width: 700px) { .company-branding-grid { grid-template-columns: 1fr; } }

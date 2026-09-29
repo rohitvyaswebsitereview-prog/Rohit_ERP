@@ -56,6 +56,7 @@ import { Documents } from './operations';
 import { DocumentActivity } from './document-activity';
 import { ProductImport } from './product-import';
 import { InvoicePdfs } from './invoice-pdfs';
+import { CompanyProfile } from './company-profile';
 import { ShipmentTimeline } from './shipment-timeline';
 import { shipmentAlerts } from '@/lib/shipment-alerts';
 import { reportRoutes } from './operation-reports';
@@ -1150,8 +1151,9 @@ function ShipzyRecord({
     m = opMap[r.kind],
     canWrite = m && permittedOperation(m, user.role, true),
     sales = salesKinds.includes(r.kind),
-    locked = r.importLocked || r.status === 'Imported';
-  const tabs = [
+    locked = r.importLocked || r.status === 'Imported',
+    companyProfile = r.kind === 'master-company-information';
+  const tabs = companyProfile ? ['General', 'Branding', 'Document Defaults', 'Documents', 'Activity'] : [
     'General',
     'Product Details',
     'Commercial Details',
@@ -1165,6 +1167,7 @@ function ShipzyRecord({
   const fields = Object.entries(r).filter(
     ([k, v]) =>
       !hiddenField(k) &&
+      m?.fields.find(f => f.key === k)?.type !== 'dataurl' &&
       v !== null &&
       v !== undefined &&
       v !== '' &&
@@ -1309,7 +1312,8 @@ function ShipzyRecord({
         ))}
       </nav>
       {tab === 'Shipment Details' && r.kind === 'shipments' && <ShipmentTimeline record={r} />}
-      {['General', 'Commercial Details', 'Shipment Details'].includes(tab) && (
+      {companyProfile && ['General', 'Branding', 'Document Defaults'].includes(tab) && <CompanyProfile record={r} tab={tab} />}
+      {!companyProfile && ['General', 'Commercial Details', 'Shipment Details'].includes(tab) && (
         <div className="shipzy-form-grid">
           {tab === 'General' && r.partnerId && (
             <label>

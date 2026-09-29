@@ -11,6 +11,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import assert from 'node:assert/strict';
 import {shipzyMenus} from './lib/shipzy-navigation';
+import {CompanyProfile} from './components/company-profile';
 import {invoicePdfVersions} from './lib/invoice-pdfs';
 import {masterCategories} from './lib/masters';
 import {opMap,operationRoutes} from './lib/operations';
@@ -23,6 +24,18 @@ import {ShipmentTimeline} from './components/shipment-timeline';
 import {shipmentAlerts} from './lib/shipment-alerts';
 import {ShipzyRegister,ShipzyMasters,ShipzyPayments} from './components/shipzy-workspace';
 let count=0;function check(label,fn){fn();count++;console.log('PASS '+label)}
+check('Company profile displays branding as images and keeps it out of general details',()=>{
+  const image='data:image/png;base64,aGVsbG8=';
+  const record={name:'Test exporter',logoDataUrl:image,signatureDataUrl:image,authorizedSignatory:'Named signatory'};
+  const render=tab=>renderToStaticMarkup(React.createElement(CompanyProfile,{record,tab}));
+  assert.ok(!render('General').includes('base64'));
+  assert.equal((render('Branding').match(/<img /g)||[]).length,2);
+  assert.ok(render('Branding').includes('No image uploaded'));
+  assert.ok(render('Document Defaults').includes('Named signatory'));
+  const invalid=renderToStaticMarkup(React.createElement(CompanyProfile,{record:{logoDataUrl:'https://external.example/image'},tab:'Branding'}));
+  assert.ok(!invalid.includes('<img'));
+  assert.ok(invalid.includes('Image unavailable'));
+});
 check('Invoice PDF versions isolate record, file format and document type while retaining earlier labels',()=>{
   const files=[
     {id:'old',entityId:'a',mime:'application/pdf',category:'Customer invoice',created:'2026-01-01',documentVersion:8},
