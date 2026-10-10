@@ -26,6 +26,10 @@ Open http://127.0.0.1:3000 and create your administrator account. There is no de
 
 ## Checks
 
+Project tool defaults and pinned upstream packages are documented in
+[dependency-defaults.md](docs/dependency-defaults.md). Future development follows
+the validation, decimal arithmetic and browser-test choices in [AGENTS.md](AGENTS.md).
+
 ```bash
 pnpm typecheck
 pnpm test
