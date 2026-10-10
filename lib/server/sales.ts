@@ -5,6 +5,7 @@ import {
   quoteStates,
   safeSalesDocument,
 } from '../sales-engine';
+import { redactAccess } from '../access-policy';
 import { fiscalYear, validDate } from '../domain';
 import { wordDocument } from './word-document';
 const response = (data: any, status = 200) =>
@@ -40,6 +41,7 @@ export async function sales(
       .all()
   ).results.map(decode);
   const find = (key: string) => all.find((r: any) => r.id === key);
+  const safe = (r: any) => redactAccess(safeSalesDocument(r), u.role);
   const audit = (name: string, k: string, key: string, detail: any) =>
     db
       .prepare('INSERT INTO audit VALUES(?,?,?,?,?,?,?,?)')
@@ -106,7 +108,7 @@ export async function sales(
       all
         .filter((r: any) => r.kind === kind)
         .map((r: any) => ({
-          ...safeSalesDocument(r),
+          ...safe(r),
           status:
             ['Approved', 'Sent', 'Viewed'].includes(r.status) &&
             r.validUntil &&
@@ -133,7 +135,7 @@ export async function sales(
         if (connected.has(r.sourceId) || connected.has(r.invoiceId))
           connected.add(r.id);
     return response({
-      record: safeSalesDocument(existing),
+      record: safe(existing),
       internal:
         u.role === 'Viewer'
           ? undefined
@@ -146,7 +148,7 @@ export async function sales(
             salesKinds.includes(r.kind) &&
             (r.revisionRoot || r.id) === (existing.revisionRoot || existing.id),
         )
-        .map(safeSalesDocument),
+        .map(safe),
       related: all
         .filter(
           (r: any) =>
@@ -160,11 +162,11 @@ export async function sales(
               'sales-draft',
             ].includes(r.kind),
         )
-        .map(safeSalesDocument),
-      communications: all.filter(
+        .map(safe),
+      communications: u.role === 'Viewer' ? [] : all.filter(
         (r: any) => r.kind === 'sales-communication' && r.sourceId === rid,
       ),
-      audit: events,
+      audit: u.role === 'Viewer' ? events.map((event: any) => ({ ...event, detail: 'Details restricted to authorised editors.' })) : events,
     });
   }
   if (req.method !== 'POST' || u.role === 'Viewer')

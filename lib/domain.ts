@@ -108,6 +108,21 @@ export function ageing(due: string, today: string) {
           ? '61–90'
           : '90+';
 }
+/** Use effective journal dates rather than a document's mutable current status. */
+export function postedAsOf(record: RecordData, records: RecordData[], end: string) {
+  if (!record.date || record.date > end) return false;
+  const history = records.filter(j => j.kind === 'journal' && j.status === 'Posted' &&
+    (j.sourceId === record.id || j.id === `${record.id}-posting` || j.id === `${record.id}-reversal`));
+  if (!history.length) return record.status === 'Posted';
+  const net = new Map<string, number>();
+  for (const journal of history.filter(j => j.date <= end)) {
+    for (const line of journal.lines || []) {
+      const key = `${journal.currency}|${line.account}`;
+      net.set(key, (net.get(key) || 0) + line.debit - line.credit);
+    }
+  }
+  return [...net.values()].some(value => value !== 0);
+}
 export function dashboard(records: RecordData[], start: string, end: string) {
   const period = (r: RecordData) => r.date >= start && r.date <= end;
   const journals = records.filter(
@@ -152,11 +167,28 @@ export function dashboard(records: RecordData[], start: string, end: string) {
     const t = Object.values(trend).filter((x) => x.currency === currency);
     const sales = t.reduce((s, x) => s + x.sales, 0),
       cost = t.reduce((s, x) => s + x.cost, 0);
+    const invoices = records.filter(r => ['invoices','domestic-invoices'].includes(r.kind) &&
+      r.currency === currency && period(r) && postedAsOf(r, records, end));
+    const missingInvoiceIds = invoices.filter(invoice => {
+      if (!invoice.lines?.length) return true;
+      return invoice.lines.some((line: any) => {
+        if (!line.productId) return true;
+        const issues = records.filter(r => r.kind === 'movements' && r.sourceId === invoice.id &&
+          r.productId === line.productId && r.currency === invoice.currency && r.status === 'Posted' &&
+          r.operationStock && r.direction === 'Issue' && r.date <= end);
+        const expected = invoice.lines.filter((l: any) => l.productId === line.productId).reduce((s: number,l: any) => s + Number(l.quantity),0);
+        return !issues.length || issues.some(r => !Number.isFinite(r.stockValue)) ||
+          Math.abs(issues.reduce((s,r) => s + Number(r.quantity),0) - expected) > 0.000001;
+      });
+    }).map(r => r.id);
+    const costCoverage = { complete: missingInvoiceIds.length === 0 && (!sales || invoices.length > 0),
+      missingInvoiceIds, invoiceCount: invoices.length, costedInvoiceCount: invoices.length - missingInvoiceIds.length };
     return {
       currency,
       sales,
       profit: sales - cost,
-      margin: sales ? ((sales - cost) / sales) * 100 : null,
+      margin: sales && costCoverage.complete ? ((sales - cost) / sales) * 100 : null,
+      costCoverage,
       receivables: balances[currency]?.['1100'] || 0,
       payables: -(balances[currency]?.['2000'] || 0),
       cash: balances[currency]?.['1000'] || 0,
@@ -166,7 +198,7 @@ export function dashboard(records: RecordData[], start: string, end: string) {
   });
   // Attribute only posted invoice lines with matching posted stock issues. Never estimate missing costs.
   const contribution = new Map<string, any>();
-  for (const invoice of records.filter(r => ['invoices','domestic-invoices'].includes(r.kind) && r.status === 'Posted' && period(r))) {
+  for (const invoice of records.filter(r => ['invoices','domestic-invoices'].includes(r.kind) && postedAsOf(r,records,end) && period(r))) {
     const products = [...new Set((invoice.lines || []).map((l: any) => l.productId).filter(Boolean))];
     for (const productId of products) {
       const lines = invoice.lines.filter((l: any) => l.productId === productId);
@@ -189,8 +221,7 @@ export function dashboard(records: RecordData[], start: string, end: string) {
             ? ['invoices', 'domestic-invoices']
             : ['bills', 'purchase-invoices', 'expenses']
           ).includes(r.kind) &&
-          r.status === 'Posted' &&
-          r.date <= end,
+          postedAsOf(r, records, end),
       )
       .map((r) => ({
         ...r,
@@ -201,8 +232,7 @@ export function dashboard(records: RecordData[], start: string, end: string) {
               (p) =>
                 (p.invoiceId === r.id || p.sourceId === r.id) &&
                 p.currency === r.currency &&
-                p.status === 'Posted' &&
-                p.date <= end &&
+                postedAsOf(p, records, end) &&
                 [
                   'receipts',
                   'payments',

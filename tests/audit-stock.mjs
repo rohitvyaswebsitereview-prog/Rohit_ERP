@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { planStockIssue } from '../lib/stock-issue.ts';
+const balances=[{currency:'INR',quantity:3,value:12000,version:1},{currency:'USD',quantity:2,value:10000,version:1}];
+const plan=planStockIssue(balances,4);
+assert.deepEqual(plan.map(p=>[p.currency,p.quantity,p.stockValue]),[['INR',3,12000],['USD',1,5000]]);
+assert.throws(()=>planStockIssue(balances,6),/Insufficient stock/);
+assert.throws(()=>planStockIssue(balances,0),/positive whole/);
+assert.throws(()=>planStockIssue(balances,1.5),/positive whole/);
+assert.deepEqual(planStockIssue([{currency:'INR',quantity:3,value:100,version:1}],3).map(p=>p.stockValue),[100]);
+console.log('5 cross-currency physical stock checks passed.');

@@ -1,4 +1,6 @@
 export const schema = [
+  `CREATE TABLE IF NOT EXISTS accounting_periods(tenant_id TEXT NOT NULL,fy TEXT NOT NULL,start_date TEXT NOT NULL,end_date TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'Open' CHECK(state IN ('Open','Closed')),version INTEGER NOT NULL DEFAULT 1,PRIMARY KEY(tenant_id,fy))`,
+  `CREATE TABLE IF NOT EXISTS accounting_controls(tenant_id TEXT PRIMARY KEY,data TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS workbook_imports(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,filename TEXT NOT NULL,sha256 TEXT NOT NULL,metadata TEXT NOT NULL,original BLOB NOT NULL,created TEXT NOT NULL,UNIQUE(tenant_id,sha256))`,
   `CREATE TABLE IF NOT EXISTS workbook_sheets(batch_id TEXT NOT NULL,sheet_index INTEGER NOT NULL,name TEXT NOT NULL,metadata TEXT NOT NULL,PRIMARY KEY(batch_id,sheet_index))`,
   `CREATE TABLE IF NOT EXISTS workbook_rows(batch_id TEXT NOT NULL,sheet_index INTEGER NOT NULL,row_number INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(batch_id,sheet_index,row_number))`,
@@ -17,6 +19,8 @@ export const schema = [
   `CREATE UNIQUE INDEX IF NOT EXISTS operation_serial ON records(tenant_id,json_extract(data,'$.serialNumber')) WHERE kind='machines'`,
   `CREATE UNIQUE INDEX IF NOT EXISTS operation_currency ON records(tenant_id,json_extract(data,'$.code')) WHERE kind='master-currency'`,
   `CREATE INDEX IF NOT EXISTS records_scope ON records(tenant_id,kind,fy)`,
+  `CREATE TRIGGER IF NOT EXISTS journal_period_lock_insert BEFORE INSERT ON records WHEN NEW.kind='journal' AND json_extract(NEW.data,'$.status')='Posted' AND EXISTS(SELECT 1 FROM accounting_periods p WHERE p.tenant_id=NEW.tenant_id AND p.state='Closed' AND json_extract(NEW.data,'$.date') BETWEEN p.start_date AND p.end_date) BEGIN SELECT RAISE(ABORT,'Accounting period is closed. Ask an administrator to reopen it with a reason.'); END`,
+  `CREATE TRIGGER IF NOT EXISTS journal_period_lock_update BEFORE UPDATE OF data ON records WHEN NEW.kind='journal' AND (EXISTS(SELECT 1 FROM accounting_periods p WHERE p.tenant_id=NEW.tenant_id AND p.state='Closed' AND json_extract(NEW.data,'$.date') BETWEEN p.start_date AND p.end_date) OR EXISTS(SELECT 1 FROM accounting_periods p WHERE p.tenant_id=OLD.tenant_id AND p.state='Closed' AND json_extract(OLD.data,'$.date') BETWEEN p.start_date AND p.end_date)) BEGIN SELECT RAISE(ABORT,'Accounting period is closed. Ask an administrator to reopen it with a reason.'); END`,
   `CREATE TABLE IF NOT EXISTS entity_relationships(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,source_id TEXT NOT NULL,target_id TEXT NOT NULL,source_type TEXT NOT NULL,target_type TEXT NOT NULL,relationship_type TEXT NOT NULL,status TEXT NOT NULL,origin TEXT NOT NULL,confidence REAL NOT NULL,evidence TEXT NOT NULL,source_line TEXT NOT NULL DEFAULT '',target_line TEXT NOT NULL DEFAULT '',created_by TEXT NOT NULL,created TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)`,
   `CREATE INDEX IF NOT EXISTS relationships_scope ON entity_relationships(tenant_id,source_id,target_id)`,
   `CREATE TABLE IF NOT EXISTS record_versions(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,record_id TEXT NOT NULL,version INTEGER NOT NULL,data TEXT NOT NULL,created TEXT NOT NULL)`,

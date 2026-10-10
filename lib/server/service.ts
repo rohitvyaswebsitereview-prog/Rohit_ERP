@@ -1,8 +1,12 @@
+import { recordPage } from './record-page';
 import { relationships } from './relationships';
 import { workbook } from './workbook';
 import { sales } from './sales';
 import { opMap, permittedOperation } from '../operations';
 import { operations } from './operations';
+import { financeControls } from './finance-controls';
+import { redactAccess } from '../access-policy';
+import { attentionAlerts } from '../attention-alerts';
 import { permittedMasters, masterItems } from '../masters';
 import { env } from 'cloudflare:workers';
 import { schema } from './schema';
@@ -90,39 +94,7 @@ function text(v: unknown, label: string, max = 200) {
   return v.trim();
 }
 function safeRecord(r: any, u: any) {
-  if (u.role === 'Logistics') {
-    const out = { ...r };
-    for (const k of [
-      'cost',
-      'amount',
-      'defaultRate',
-      'creditLimit',
-      'accountNumber',
-      'bankAccounts',
-      'bankName',
-      'pan',
-      'gstin',
-      'currency',
-    ])
-      delete out[k];
-    return out;
-  }
-  if (u.role !== 'Viewer') return r;
-  const out = { ...r };
-  if (out.bankAccounts)
-    out.bankAccounts = out.bankAccounts.map((a: any) => ({
-      ...a,
-      number: '••••' + String(a.number || '').slice(-4),
-    }));
-  for (const k of [
-    'accountNumber',
-    'pan',
-    'gstin',
-    'customerGstin',
-    'taxRegistrations',
-  ])
-    if (out[k]) out[k] = '••••' + String(out[k]).slice(-4);
-  return out;
+  return redactAccess(r, u.role);
 }
 const decode = (r: any): RecordData => ({
   ...JSON.parse(r.data),
@@ -136,9 +108,9 @@ async function records(tenant: string, fy?: string) {
   const q = fy
     ? db()
         .prepare(
-          `SELECT * FROM records WHERE tenant_id=? AND (fy=? OR kind IN ('customers','vendors','products','warehouses','movements')) ORDER BY created DESC`,
+          'SELECT * FROM records WHERE tenant_id=? AND (fy=? OR fy=?) ORDER BY created DESC',
         )
-        .bind(tenant, fy)
+        .bind(tenant, fy, 'master')
     : db()
         .prepare(
           'SELECT * FROM records WHERE tenant_id=? ORDER BY created DESC',
@@ -461,6 +433,7 @@ export async function handle(req: Request) {
         { error: 'Your session has expired. Please sign in again.' },
         401,
       );
+    if (path === 'finance-controls') return await financeControls(req, b, u, db());
     if (path === 'relationships' || path.startsWith('relationships/'))
       return await relationships(req, path, b, u, db());
     if (path === 'workbook' || path.startsWith('workbook/'))
@@ -528,8 +501,10 @@ export async function handle(req: Request) {
         return json(p ? JSON.parse(p.data) : {});
       }
       if (req.method === 'POST') {
+        const preferredFy = String(b.fy || '2026–27');
+        if (!/^\d{4}–\d{2}$/.test(preferredFy) || fiscalYear(preferredFy.slice(0,4)+'-04-01') !== preferredFy) throw new Error('Choose a valid financial year.');
         const p = {
-          fy: String(b.fy || '2026–27'),
+          fy: preferredFy,
           period: String(b.period || 'This financial year'),
         };
         await db()
@@ -588,51 +563,68 @@ export async function handle(req: Request) {
       return json({ id: uid }, 201);
     }
     if (path === 'activity' && req.method === 'GET') {
-      return json(
-        (
-          await db()
-            .prepare(
-              'SELECT a.*,u.name actor FROM audit a LEFT JOIN users u ON u.id=a.user_id WHERE a.tenant_id=? ORDER BY a.created DESC LIMIT 100',
-            )
-            .bind(u.tenant_id)
-            .all()
-        ).results
-          .filter(
-            (r: any) =>
-              u.role === 'Admin' || permissions[u.role]?.includes(r.kind),
-          )
-          .map((r: any) =>
-            u.role === 'Viewer'
-              ? { ...r, detail: 'Details restricted to authorised editors.' }
-              : r,
-          ),
-      );
+      const fy = url.searchParams.get('fy');
+      const match = fy?.match(/^(\d{4})–(\d{2})$/);
+      if (fy && (!match || (Number(match[1]) + 1) % 100 !== Number(match[2])))
+        return json({ error: 'Invalid financial year.' }, 400);
+      const first = match ? `${match[1]}-04-01` : '';
+      const last = match ? `${Number(match[1]) + 1}-04-01` : '';
+      const start = url.searchParams.get('start') || first;
+      const end = url.searchParams.get('end') || last;
+      if ((start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) || (end && !/^\d{4}-\d{2}-\d{2}$/.test(end)))
+        return json({ error: 'Invalid activity date.' }, 400);
+      const explicitEnd = url.searchParams.get('end');
+      const endExclusive = explicitEnd ? new Date(Date.parse(`${end}T00:00:00Z`) + 86400000).toISOString().slice(0, 10) : end;
+      const offset = Number(url.searchParams.get('offset') || 0);
+      const limit = Number(url.searchParams.get('limit') || 100);
+      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+        return json({ error: 'Invalid activity page.' }, 400);
+      const visibleKinds = new Set([
+        ...(permissions[u.role] || []),
+        ...Object.values(opMap).filter((m) => permittedOperation(m, u.role)).map((m) => m.key),
+        ...(u.role === 'Admin' ? ['users', 'relationships', 'workbook-import'] : []),
+        ...(u.role === 'Finance' ? ['relationships', 'workbook-import'] : []),
+      ]);
+      const kinds = [...visibleKinds];
+      const rows = (await db().prepare(
+        "SELECT a.*,u.name actor FROM audit a LEFT JOIN users u ON u.id=a.user_id WHERE a.tenant_id=? AND (?='' OR a.created>=?) AND (?='' OR a.created<?) AND a.kind IN (SELECT value FROM json_each(?)) ORDER BY a.created DESC,a.id DESC LIMIT ? OFFSET ?",
+      ).bind(u.tenant_id, start, start, endExclusive, endExclusive, JSON.stringify(kinds), limit, offset).all()).results;
+      return json(rows.map((r: any) => redactAccess({ ...r, fy: fiscalYear(r.created.slice(0, 10)) }, u.role)));
     }
     if (path === 'notifications' && req.method === 'GET') {
-      const all = await records(
-        u.tenant_id,
-        url.searchParams.get('fy') || undefined,
-      );
+      const fy = url.searchParams.get('fy') || fiscalYear(now().slice(0, 10));
+      if (!/^\d{4}–\d{2}$/.test(fy)) return json({ error: 'Invalid financial year.' }, 400);
+      const permitted = new Set([
+        ...(permissions[u.role] || []),
+        ...Object.values(opMap).filter((module) => permittedOperation(module, u.role)).map((module) => module.key),
+      ]);
+      const all = (await records(u.tenant_id)).filter((record) => permitted.has(record.kind))
+        .map((record) => ({ ...safeRecord(record, u), ...(u.role === 'Logistics' ? { notes: '' } : {}) }));
+      const balances = (await db().prepare('SELECT product_id,quantity FROM stock_balances WHERE tenant_id=?').bind(u.tenant_id).all()).results;
+      const alerts = attentionAlerts(all, balances, fy, now().slice(0, 10));
       const read = (
         await db()
           .prepare('SELECT record_id FROM notification_reads WHERE user_id=?')
           .bind(u.id)
           .all()
       ).results.map((r: any) => r.record_id);
-      return json(
-        all
-          .filter((r) => r.kind === 'exceptions' && r.status !== 'Resolved')
-          .map((r) => ({ ...r, read: read.includes(r.id) })),
-      );
+      return json(alerts.map((alert) => ({ ...alert, read: read.includes(alert.id) })));
     }
     if (path === 'notifications/read' && req.method === 'POST') {
-      const all = await records(u.tenant_id);
-      const statements = all
-        .filter((r) => r.kind === 'exceptions')
-        .map((r) =>
+      const fy = String(b.fy || fiscalYear(now().slice(0, 10)));
+      if (!/^\d{4}–\d{2}$/.test(fy)) return json({ error: 'Invalid financial year.' }, 400);
+      const permitted = new Set([
+        ...(permissions[u.role] || []),
+        ...Object.values(opMap).filter((module) => permittedOperation(module, u.role)).map((module) => module.key),
+      ]);
+      const all = (await records(u.tenant_id)).filter((record) => permitted.has(record.kind))
+        .map((record) => ({ ...safeRecord(record, u), ...(u.role === 'Logistics' ? { notes: '' } : {}) }));
+      const balances = (await db().prepare('SELECT product_id,quantity FROM stock_balances WHERE tenant_id=?').bind(u.tenant_id).all()).results;
+      const statements = attentionAlerts(all, balances, fy, now().slice(0, 10))
+        .map((alert) =>
           db()
             .prepare('INSERT OR IGNORE INTO notification_reads VALUES (?,?)')
-            .bind(u.id, r.id),
+            .bind(u.id, alert.id),
         );
       if (statements.length) await db().batch(statements);
       return json({ ok: true });
@@ -651,6 +643,7 @@ export async function handle(req: Request) {
         .filter((m) => permittedOperation(m, u.role))
         .map((m) => m.key),
     ];
+    if (path === 'record-page' && req.method === 'GET') return await recordPage(req,u,db(),allowed);
     if (path === 'dashboard' && req.method === 'GET') {
       const fy = url.searchParams.get('fy') || '2026–27';
       const start = validDate(url.searchParams.get('start'));
@@ -706,7 +699,7 @@ export async function handle(req: Request) {
             (r) =>
               allowed.includes(r.kind) &&
               (!url.searchParams.get('fy') ||
-                masterKinds.includes(r.kind) ||
+                r.fy === 'master' ||
                 r.fy === url.searchParams.get('fy')) &&
               [r.name, r.reference, r.sku, r.destination].some((x) =>
                 String(x || '')
@@ -918,6 +911,8 @@ export async function handle(req: Request) {
     return json({ error: 'Endpoint not found.' }, 404);
   } catch (e: any) {
     const message = String(e.message || 'Request failed.');
+    if (message.includes('Accounting period is closed.'))
+      return json({error:'Accounting period is closed. Ask an administrator to reopen it with a reason.'},400);
     if (/UNIQUE constraint/.test(message))
       return json(
         {

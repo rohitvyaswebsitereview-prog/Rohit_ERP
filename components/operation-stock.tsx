@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api, money, Blank, Loading, exportCSV } from './erp-ui';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { stockValueSummary } from '@/lib/audit-presentation';
 import {
   Table,
   TableHeader,
@@ -11,8 +12,9 @@ import {
   TableBody,
   TableCell,
 } from '@/components/ui/table';
-export default function OperationStock() {
+export default function OperationStock({ valuation = false }: { valuation?: boolean }) {
   const [rows, setRows] = useState<any[]>([]),
+    [unvaluedCount, setUnvaluedCount] = useState(0),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(''),
     [query, setQuery] = useState(''),
@@ -20,7 +22,8 @@ export default function OperationStock() {
   useEffect(() => {
     setProductId(new URLSearchParams(window.location.search).get('product') || '');
     Promise.all([api('operations/stock'), api('operations/data')])
-      .then(([stock, data]) =>
+      .then(([stock, data]) => {
+        setUnvaluedCount(data.filter((r: any) => r.kind === 'movements' && !r.operationStock).length);
         setRows(
           stock.map((r: any) => ({
             ...r,
@@ -31,8 +34,8 @@ export default function OperationStock() {
               data.find((p: any) => p.id === r.warehouse_id)?.name ||
               r.warehouse_id,
           })),
-        ),
-      )
+        );
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -40,6 +43,7 @@ export default function OperationStock() {
   const filtered = rows.filter((r) =>
     (!productId || r.product_id === productId) && (r.product + ' ' + r.warehouse).toLowerCase().includes(query.toLowerCase()),
   );
+  const totals = stockValueSummary(filtered);
   return (
     <div className="op-workspace">
       {error && <p className="error-box">{error}</p>}
@@ -70,11 +74,14 @@ export default function OperationStock() {
         </Button>
       </div>
       <p className="op-note">
+        {valuation ? 'Valued stock balances for all products, including non-serialized goods. ' : ''}
         Perpetual weighted-average cost by product, warehouse and currency.
         Purchase postings, sales, transfers and production update these
         balances. Earlier unvalued manual movements remain in Stock Overview and
         require a reviewed opening adjustment.
       </p>
+      {unvaluedCount > 0 && <p className="op-note" role="status">{unvaluedCount} manual or historical stock movement{unvaluedCount === 1 ? '' : 's'} have no recorded value here. Review them before relying on total inventory value.</p>}
+      {totals.length > 0 && <div className="op-note" aria-label="Stock value by currency">{totals.map(t => <p key={t.currency}>{t.currency}: {t.missingValues ? `${t.missingValues} value${t.missingValues === 1 ? '' : 's'} unavailable` : money(t.value, t.currency)} · {t.quantity} valued units</p>)}</div>}
       <section className="widget">
         {filtered.length ? (
           <Table>

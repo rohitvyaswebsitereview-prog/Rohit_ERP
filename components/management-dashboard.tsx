@@ -20,7 +20,7 @@ export function ManagementDashboard({ records, fy, role, revision, go, refresh, 
     go(base + '?' + params);
   }
   return <div className="management-dashboard">
-    <div className="dashboard-context"><div><h2>Dashboard</h2><span>FY {fy}</span></div>
+    <div className="dashboard-context"><div><span>FY {fy}</span></div>
       <label>Period<select value={period} onChange={e => setPeriod(e.target.value)}>{dashboardPeriods.map(p => <option key={p}>{p}</option>)}</select></label>
       {period === 'Custom Period' && <><label>From<input type="date" value={from} onChange={e => setFrom(e.target.value)} /></label><label>To<input type="date" value={to} onChange={e => setTo(e.target.value)} /></label></>}
       <Button variant="outline" onClick={refresh}>Refresh</Button><small>{updatedAt ? 'Updated ' + new Date(updatedAt).toLocaleString('en-IN') : 'Loading data…'}</small>

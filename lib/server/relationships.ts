@@ -20,6 +20,7 @@ import {
 } from '../relationships';
 import { opMap, permittedOperation } from '../operations';
 import { calculationRules, calculate } from '../transaction-rules';
+import { redactAccess } from '../access-policy';
 const json = (v: any, s = 200) =>
   Response.json(v, { status: s, headers: { 'Cache-Control': 'no-store' } });
 const uid = () => crypto.randomUUID();
@@ -138,13 +139,29 @@ export async function relationships(
         )
         .bind(rid, u.tenant_id)
         .first();
-      if (!edge || !byId.has(edge.source_id) || !byId.has(edge.target_id))
+      const inferred = !edge ? inferRelationships(all).find((candidate) => u.tenant_id + '|' + candidate.id === rid) : null;
+      const subject = edge || inferred;
+      if (!subject || !byId.has(subject.source_id) || !byId.has(subject.target_id))
         return json({ error: 'Relationship not found.' }, 404);
       if (
         !['Confirmed', 'Rejected'].includes(b.status) ||
         !String(b.reason || '').trim()
       )
         return json({ error: 'A decision and reason are required.' }, 400);
+      if (inferred) {
+        if (Number(b.version) !== 1)
+          return json({ error: 'Relationship changed. Reload before reviewing.' }, 409);
+        await db.batch([
+          db.prepare('INSERT INTO entity_relationships(id,tenant_id,source_id,target_id,source_type,target_type,relationship_type,status,origin,confidence,evidence,source_line,target_line,created_by,created,version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,2)').bind(
+            rid, u.tenant_id, inferred.source_id, inferred.target_id, inferred.source_type,
+            inferred.target_type, inferred.relationship_type, b.status, 'reviewed', 1,
+            String(b.reason).slice(0, 1000), inferred.source_line, inferred.target_line,
+            u.id, stamp(),
+          ),
+          audit('Relationship reviewed', rid, { from: 'Derived', decision: b.status, reason: String(b.reason).slice(0, 1000) }),
+        ]);
+        return json({ ok: true });
+      }
       const result = await db.batch([
         db
           .prepare(
@@ -321,7 +338,7 @@ export async function relationships(
         'taxRegistrations',
       ])
         delete clean[k];
-    return { ...clean, ...base };
+    return redactAccess({ ...clean, ...base }, u.role);
   };
   const stored = (
     await db
@@ -329,56 +346,30 @@ export async function relationships(
       .bind(u.tenant_id)
       .all()
   ).results;
-  const storedIds = new Set(stored.map((e: any) => e.id));
   const inferred = inferRelationships(all);
-  if (inferred.length) {
-    const statements = inferred
-      .filter((e) => !storedIds.has(u.tenant_id + '|' + e.id))
-      .map((e) =>
-        db
-          .prepare(
-            'INSERT OR IGNORE INTO entity_relationships(id,tenant_id,source_id,target_id,source_type,target_type,relationship_type,status,origin,confidence,evidence,source_line,target_line,created_by,created,version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)',
-          )
-          .bind(
-            u.tenant_id + '|' + e.id,
-            u.tenant_id,
-            e.source_id,
-            e.target_id,
-            e.source_type,
-            e.target_type,
-            e.relationship_type,
-            e.status,
-            e.origin,
-            e.confidence,
-            e.evidence,
-            e.source_line,
-            e.target_line,
-            'system',
-            stamp(),
-          ),
-      );
-    for (let i = 0; i < statements.length; i += 100)
-      await db.batch(statements.slice(i, i + 100));
-  }
   const liveKeys = new Set(inferred.map((e) => u.tenant_id + '|' + e.id));
-  const edges = (
-    await db
-      .prepare('SELECT * FROM entity_relationships WHERE tenant_id=?')
-      .bind(u.tenant_id)
-      .all()
-  ).results.filter(
+  const edges = stored.filter(
     (e: any) =>
       byId.has(e.source_id) &&
       byId.has(e.target_id) &&
-      (e.origin === 'manual' || liveKeys.has(e.id)),
+      (['manual', 'reviewed'].includes(e.origin) || liveKeys.has(e.id)),
   );
+  const storedIds = new Set(edges.map((e: any) => e.id));
+  for (const edge of inferred) {
+    const key = u.tenant_id + '|' + edge.id;
+    if (!storedIds.has(key) && byId.has(edge.source_id) && byId.has(edge.target_id))
+      edges.push({ ...edge, id: key, tenant_id: u.tenant_id, created_by: 'system', created: '', version: 1 });
+  }
   if (action === 'search') {
     const params = new URL(req.url).searchParams,
       q = (params.get('q') || '').trim().toLowerCase();
     if (!q) return json([]);
+    const fy = params.get('fy');
+    const inYear = (r: any) => !fy || r.fy === 'master' || r.fy === fy;
     const matches = records
       .filter(
         (r: any) =>
+          inYear(r) &&
           inDataView(r, params.get('view') || 'All data') &&
           JSON.stringify(safe(r)).toLowerCase().includes(q),
       )
@@ -391,6 +382,7 @@ export async function relationships(
         if (
           found.size < 120 &&
           !found.has(n.id) &&
+          inYear(n) &&
           inDataView(n, params.get('view') || 'All data')
         )
           found.set(n.id, { ...safe(n), match: 'Connected record' });

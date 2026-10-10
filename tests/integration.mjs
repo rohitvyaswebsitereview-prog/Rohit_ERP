@@ -926,11 +926,12 @@ try {
     (await opStatus('stock-adjustments', opening, 'Posted')).status,
     200,
   );
+  const recipeUnit = await opCreate('master-units', {name:'Piece',code:'PCS'});
   const bom = await opCreate('master-bom', {
     name: 'Test BOM',
     productId: outputProduct,
     revision: '1',
-    components: '2 raw units per finished unit',
+    components: [{productId:material,unitId:recipeUnit,quantityPerUnit:'2'}],
   });
   const production = await opCreate('production-orders', {
     reference: 'PROD-TEST',

@@ -1,7 +1,5 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { dashboardAlerts } from '@/lib/dashboard-alerts';
-import { stockAlerts } from '@/lib/stock-alerts';
 import { canOpenWorkspace } from '@/lib/workspace-navigation';
 import {
   ArrowUpRight,
@@ -41,6 +39,7 @@ import {
   exportCSV,
 } from './erp-ui';
 import type { RecordData } from '@/lib/domain';
+import { grossProfitPresentation } from '@/lib/audit-presentation';
 type Props = {
   fy: string;
   start: string;
@@ -110,7 +109,7 @@ export default function Dashboard({
       `notifications?fy=${encodeURIComponent(fy)}`,
       revision,
     ),
-    activity = useWidget('activity', revision);
+    activity = useWidget('activity?fy='+encodeURIComponent(fy)+'&limit=6', revision);
   const [currency, setCurrency] = useState('INR'),
     [status, setStatus] = useState('All'),
     [search, setSearch] = useState(''),
@@ -140,10 +139,7 @@ export default function Dashboard({
   const orders = running.filter((r: any) =>
     (status === 'All' || status === 'In Transit' && r.inTransit || status === 'Delayed' && r.delayed || status === 'Pending Action' && !!r.next?.action) &&
     [r.reference,r.party,r.destination,r.owner].join(' ').toLowerCase().includes(search.toLowerCase()));
-  const generated = [...dashboardAlerts(records, fy, new Date().toISOString().slice(0,10)), ...stockAlerts(records, stock.data || [])]
-    .map(a => ({...a, name:a.title, category:a.group, dueDate: ('dueDate' in a ? a.dueDate : '') || ''}));
-  const alerts = [...(attention.data || []).map((a: any) => ({...a, route:'exceptions?record='+encodeURIComponent(a.id)})), ...generated].sort(
-    (a: any, b: any) => (({Critical:0,Warning:1,Attention:2} as any)[a.severity] ?? 3) - (({Critical:0,Warning:1,Attention:2} as any)[b.severity] ?? 3) || (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
+  const alerts = attention.data || [];
   const trend = (data.trend || [])
     .filter((r: any) => r.currency === currency)
     .sort((a: any, b: any) => a.month.localeCompare(b.month))
@@ -154,16 +150,17 @@ export default function Dashboard({
       }),
       profit: r.sales - r.cost,
     }));
+  const gross = grossProfitPresentation(total);
   const kpis = [
     ['Total Sales', total.sales, 'sales-report', TrendingUp, 'Posted revenue'],
     [
-      'Gross Profit',
+      gross.label,
       total.profit,
       'profitability',
       ChartIcon,
-      total.margin === null
+      gross.note || (gross.margin === null
         ? 'No posted sales'
-        : `${total.margin.toFixed(2)}% gross margin`,
+        : `${gross.margin.toFixed(2)}% gross margin`),
     ],
     [
       'Receivables',
@@ -175,11 +172,11 @@ export default function Dashboard({
     ['Payables', total.payables, 'payables', Wallet, 'Outstanding balance'],
     ['Cash & Bank', total.cash, 'cash', Landmark, 'Ledger balance'],
     [
-      'Open Orders',
+      'Active Transactions',
       running.length,
       'transactions',
       Package,
-      'Active this financial year',
+      'Current status · through selected end date',
     ],
   ] as const;
   const financeVisible = role !== 'Logistics';
@@ -207,7 +204,7 @@ export default function Dashboard({
                 className={'kpi kpi-' + i}
                 key={label}
                 onClick={() =>
-                  go(route, label === 'Open Orders' ? 'Active' : currency)
+                  go(route, label === 'Active Transactions' ? 'Active' : currency)
                 }
               >
                 <span className="kpi-label">
@@ -215,7 +212,7 @@ export default function Dashboard({
                   <Icon size={17} />
                 </span>
                 <strong>
-                  {label === 'Open Orders'
+                  {label === 'Active Transactions'
                     ? value
                     : money(value, currency, true)}
                 </strong>
@@ -287,7 +284,7 @@ export default function Dashboard({
       </div>
       <Widget
         title="Orders in motion"
-        subtitle="Current progress across active orders"
+        subtitle="Current status of transactions dated through the selected end date"
         onView={() => go('transactions')}
         onRefresh={operations.retry}
         onExport={() => exportCSV(orders, 'running-orders')}
@@ -381,7 +378,7 @@ export default function Dashboard({
           </div>
           <div className="two-columns">
             <Widget
-              title="Sales & gross profit"
+              title={gross.note ? 'Sales & provisional gross profit' : 'Sales & gross profit'}
               subtitle={`${currency} · Monthly trend`}
               onView={() => go('profitability', currency)}
               onRefresh={financial.retry}
@@ -397,7 +394,7 @@ export default function Dashboard({
                       </span>
                       <span>
                         <i className="blue-dot" />
-                        Gross profit
+                        {gross.note ? 'Provisional gross profit' : 'Gross profit'}
                       </span>
                     </div>
                     <div className="chart">
@@ -447,7 +444,7 @@ export default function Dashboard({
                           />
                           <Area
                             dataKey="profit"
-                            name="Gross profit"
+                            name={gross.note ? 'Provisional gross profit' : 'Gross profit'}
                             stroke="#497dcc"
                             fill="transparent"
                             strokeWidth={2}

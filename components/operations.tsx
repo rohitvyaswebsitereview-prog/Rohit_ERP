@@ -49,6 +49,8 @@ import {
   permittedOperation,
 } from '@/lib/operations';
 import type { OpField, OpModule } from '@/lib/operations';
+import { validateRecipe, productionPlan } from '@/lib/production-recipe';
+import { ProductionRecipePreview } from './production-recipe';
 const refs: Record<string, string[]> = {
   'approval-source': Object.values(opMap)
     .filter((m) => m.posting)
@@ -289,7 +291,8 @@ export default function Operations({
           m.fields.map((f) => [f.key, f.key === 'date' ? today() : '']),
         );
     for (const f of m.fields)
-      if (f.type === 'rows' && !Array.isArray(d[f.key])) d[f.key] = [];
+      if (f.type === 'rows' && !Array.isArray(d[f.key]) && !(kind === 'master-bom' && r && f.key === 'components' && typeof d[f.key] === 'string')) d[f.key] = [];
+    if (kind === 'master-bom') d.bomMigrationConfirmed = false;
     if (r && !m.master && !m.lines && r.amount)
       d.amount = (r.amount / 100).toFixed(2);
     d.lines = r?.lines?.map((l: any) => ({ ...l })) || [emptyLine()];
@@ -305,6 +308,16 @@ export default function Operations({
     setBusy(true);
     setError('');
     try {
+      if (kind === 'master-bom') {
+        if (record && typeof record.components === 'string' && !draft.bomMigrationConfirmed)
+          throw new Error('Review the legacy BOM text and choose Replace with structured rows before saving.');
+        validateRecipe(draft.productId, draft.components, data);
+      }
+      if (kind === 'production-orders') {
+        const bom = data.find(r => r.id === draft.bomId && r.kind === 'master-bom');
+        if (!bom || bom.productId !== draft.productId) throw new Error('The production output product must match the selected BOM.');
+        productionPlan(bom, draft.quantity, draft.expectedScrapQuantity, data);
+      }
       const result = await api(
         `operations/${kind}${selected ? '/' + selected + '/save' : ''}`,
         { ...draft, version: record?.version },
@@ -399,6 +412,7 @@ export default function Operations({
           field={f}
           value={Array.isArray(draft[f.key]) ? draft[f.key] : []}
           onChange={(v) => set(f.key, v)}
+          data={data}
         />
       ) : f.type === 'reference' || f.type === 'select' ? (
         <SelectField
@@ -522,7 +536,7 @@ export default function Operations({
               >
                 Cancel
               </Button>
-              <Button disabled={busy}>
+              <Button disabled={busy || (kind === 'master-bom' && typeof record?.components === 'string' && !draft.bomMigrationConfirmed)}>
                 {busy ? 'Saving…' : 'Save record'}
               </Button>
             </div>
@@ -543,6 +557,8 @@ export default function Operations({
                   {m.fields
                     .filter((f) => (f.section || 'Basic') === s)
                     .map(input)}
+                  {kind === 'master-bom' && s === 'Recipe' && typeof record?.components === 'string' && !draft.bomMigrationConfirmed && <div className="op-wide op-note" role="status"><strong>Legacy text recipe needs review</strong><p>{record.components}</p><p>Choose replacement before entering structured rows. The text will not be interpreted automatically.</p><Button type="button" variant="outline" onClick={() => { setDraft((d: any) => ({ ...d, components: [], bomMigrationConfirmed: true })); }}>Replace with structured rows</Button></div>}
+                  {kind === 'production-orders' && s === 'Basic' && <div className="op-wide"><ProductionRecipePreview bomId={draft.bomId} outputProductId={draft.productId} quantity={draft.quantity} expectedScrapQuantity={draft.expectedScrapQuantity} records={data} /></div>}
                   {kind === 'products' && s === 'Measurements' && <div className="op-wide" role="status">
                     <strong>Volume (m³): </strong>
                     {['lengthCm', 'widthCm', 'heightCm'].every(k => draft[k] !== '' && draft[k] !== undefined)
@@ -788,7 +804,9 @@ export default function Operations({
                       <div key={f.key}>
                         <dt>{f.label}</dt>
                         <dd>
-                          {f.type === 'rows' ? (
+                          {f.type === 'rows' && typeof record[f.key] === 'string' ? (
+                            <span>Legacy recipe text: {record[f.key]} · Review and replace with structured rows before production planning.</span>
+                          ) : f.type === 'rows' ? (
                             <ChildRows
                               field={f}
                               value={
@@ -798,6 +816,7 @@ export default function Operations({
                               }
                               readOnly
                               onChange={() => {}}
+                              data={data}
                             />
                           ) : f.key === 'amount' && !m.master ? (
                             money(record.amount, record.currency || 'INR')
@@ -808,6 +827,7 @@ export default function Operations({
                       </div>
                     ))}
                 </dl>
+                {kind === 'production-orders' && <ProductionRecipePreview bomId={record.bomId} outputProductId={record.productId} quantity={record.quantity} expectedScrapQuantity={record.expectedScrapQuantity} records={data} />}
                 {m.lines && (
                   <CostTable
                     lines={record.lines || []}
@@ -1502,11 +1522,13 @@ function ChildRows({
   field,
   value,
   onChange,
+  data,
   readOnly = false,
 }: {
   field: OpField;
   value: any[];
   onChange: (v: any[]) => void;
+  data: any[];
   readOnly?: boolean;
 }) {
   return (
@@ -1514,25 +1536,12 @@ function ChildRows({
       <strong>{field.label}</strong>
       {value.map((r, i) => (
         <div className="op-child-row" key={i}>
-          {field.columns?.map((c) => (
-            <label className="field" key={c.key}>
-              <span>{c.label}</span>
-              {readOnly ? (
-                <span>{r[c.key] || '—'}</span>
-              ) : (
-                <Input
-                  type={c.type || 'text'}
-                  value={r[c.key] || ''}
-                  onChange={(e) =>
-                    onChange(
-                      value.map((x, n) =>
-                        n === i ? { ...x, [c.key]: e.target.value } : x,
-                      ),
-                    )
-                  }
-                />
-              )}
-            </label>
+          {field.columns?.map((c) => readOnly ? (
+            <label className="field" key={c.key}><span>{c.label}</span><span>{c.source ? label(data.find(item => item.id === r[c.key]) || { name: r[c.key] || '—' }) : r[c.key] || '—'}</span></label>
+          ) : c.type === 'reference' ? (
+            <SelectField key={c.key} field={{ key: c.key, label: c.label, type: c.type, source: c.source, required: c.required }} value={r[c.key]} data={data} onChange={v => onChange(value.map((x, n) => n === i ? { ...x, [c.key]: v } : x))} />
+          ) : (
+            <label className="field" key={c.key}><span>{c.label}</span><Input type={c.type || 'text'} min={c.type === 'number' ? '1' : undefined} step={c.type === 'number' ? '1' : undefined} required={c.required} value={r[c.key] || ''} onChange={e => onChange(value.map((x, n) => n === i ? { ...x, [c.key]: e.target.value } : x))} /></label>
           ))}
           {!readOnly && (
             <Button

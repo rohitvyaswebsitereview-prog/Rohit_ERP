@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
+import { loadRecords } from '@/lib/load-records';
 import {
   Menu,
   Search,
@@ -64,6 +65,7 @@ import { ShipmentTimeline } from './shipment-timeline';
 import { dashboardAlerts } from '@/lib/dashboard-alerts';
 import { stockAlerts } from '@/lib/stock-alerts';
 import { reportRoutes } from './operation-reports';
+import { companyExportRow, searchPath } from '@/lib/audit-presentation';
 const recordLink = (r: any, tab = 'General') =>
   r.kind +
   '?record=' +
@@ -103,6 +105,7 @@ export default function ShipzyWorkspace({
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
   const [updatedAt, setUpdatedAt] = useState('');
+  const [availableYears, setAvailableYears] = useState<string[]>(['2026–27','2025–26','2024–25']);
   const [url, setUrl] = useState('dashboard'),
     [fy, setFy] = useState('2026–27'),
     [records, setRecords] = useState<any[]>([]),
@@ -112,8 +115,19 @@ export default function ShipzyWorkspace({
     [collapsed, setCollapsed] = useState(false),
     [expanded, setExpanded] = useState(''),
     [search, setSearch] = useState(''),
+    [searchAllYears, setSearchAllYears] = useState(false),
     [results, setResults] = useState<any[] | null>(null),
     [searchError, setSearchError] = useState('');
+  useEffect(() => {
+    api('preferences').then(p=>{if (/^\d{4}–\d{2}$/.test(p.fy || '')) setFy(p.fy);}).catch(()=>{});
+  }, []);
+  useEffect(() => {
+    api('finance-controls').then(d=>setAvailableYears([...new Set<string>([...d.years.map((y:any)=>y.fy),fy])].sort().reverse())).catch(()=>{});
+  }, [revision, fy]);
+  function chooseYear(value:string) {
+    setFy(value);
+    api('preferences',{fy:value,period:'This financial year'}).catch(e=>setError(e.message));
+  }
   const { setView } = useDataView();
   useEffect(() => {
     const shortcut = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus(); } };
@@ -126,6 +140,7 @@ export default function ShipzyWorkspace({
     setUrl(r);
     setResults(null);
     setSearch('');
+    setExpanded('');
     if (window.matchMedia('(max-width:700px)').matches) setCollapsed(true);
     window.scrollTo(0, 0);
   };
@@ -145,7 +160,7 @@ export default function ShipzyWorkspace({
     let live = true;
     setLoading(true);
     setError('');
-    api('records')
+    loadRecords(api)
       .then((r) => { if (live) { setRecords(r); setUpdatedAt(new Date().toISOString()); } })
       .catch((e) => live && setError(e.message))
       .finally(() => live && setLoading(false));
@@ -158,25 +173,15 @@ export default function ShipzyWorkspace({
     route = operationRoutes[raw] || raw,
     selected = records.find((r) => r.id === params.get('record')),
     m = opMap[route];
-  useEffect(() => {
-    const parent = shipzyMenus.find(n => n.children?.some(([r]) => r === route));
-    if (parent) setExpanded(parent.route);
-  }, [route]);
   const can = (r: string) => canOpenWorkspace(r, user.role),
     name =
       shipzyTitle(route) || titles[route] || opMap[route]?.label || 'Workspace';
-  async function find(e: any) {
+  async function find(e: any, allYears = searchAllYears) {
     e.preventDefault();
     if (!search.trim()) return;
     setSearchError('');
     try {
-      setResults(
-        await api(
-          'relationships/search?q=' +
-            encodeURIComponent(search) +
-            '&view=All%20data',
-        ),
-      );
+      setResults(await api(searchPath(search, fy, allYears)));
     } catch (e: any) {
       setSearchError(e.message);
     }
@@ -193,10 +198,11 @@ export default function ShipzyWorkspace({
       user,
       canWrite: user.role !== 'Viewer',
       notifications: [],
-      changeFy: setFy,
+      changeFy: chooseYear,
     });
   const editing =
     params.has('create') || params.has('edit') || params.has('actions');
+  const companySetup = masterReadiness(records, user.role).find(item => item.key === 'company-information');
   return (
     <div className={'shipzy-app' + (collapsed ? ' shipzy-collapsed' : '')}>
       <aside className="shipzy-sidebar">
@@ -249,7 +255,6 @@ export default function ShipzyWorkspace({
                         .filter(([r]) => can(r))
                         .map(([r, l, section], index, entries) => (
                           <div key={r + index}>
-                          {(index === 0 || entries[index - 1][2] !== section) && <span className="shipzy-submenu-heading">{section}</span>}
                           <button
                             key={r}
                             aria-current={route === r ? 'page' : undefined}
@@ -290,8 +295,8 @@ export default function ShipzyWorkspace({
           </form>
           <label className="shipzy-year">
             <span className="sr-only">Financial year</span>
-            <select value={fy} onChange={(e) => e.target.value === "manage" ? go("settings") : setFy(e.target.value)}>
-              {['2026–27', '2025–26', '2024–25'].map((y) => (
+            <select value={fy} onChange={(e) => e.target.value === "manage" ? go("settings") : chooseYear(e.target.value)}>
+              {availableYears.map((y) => (
                 <option key={y} value={y}>
                   FY {y}
                 </option>
@@ -332,15 +337,17 @@ export default function ShipzyWorkspace({
           </DropdownMenu>
         </header>
         <main className="shipzy-content">
+          {!loading && !results && ['dashboard', 'masters'].includes(route) && companySetup && !companySetup.ready && <div className="op-note" role="status">Company setup needs attention: {companySetup.missing.join(', ')}. <Button variant="outline" onClick={() => go('master-company-information')}>Complete company profile</Button></div>}
           {searchError && <p className="error-box">{searchError}</p>}
           {results ? (
             <section className="shipzy-panel">
               <header>
-                <h2>Search results</h2>
+                <h2>Search results · {searchAllYears ? 'All years' : 'FY ' + fy}</h2>
                 <Button variant="outline" onClick={() => setResults(null)}>
                   Close
                 </Button>
               </header>
+              <label className="op-note"><input type="checkbox" checked={searchAllYears} onChange={e => { setSearchAllYears(e.target.checked); void find(e, e.target.checked); }} /> Search all financial years</label>
               {results.map((r) => (
                 <button
                   className="shipzy-search-result"
@@ -349,6 +356,7 @@ export default function ShipzyWorkspace({
                 >
                   <span>{opMap[r.kind]?.label || r.kind}</span>
                   <strong>{entityLabel(r)}</strong>
+                  <small>{r.fy === 'master' ? 'Master' : 'FY ' + (r.fy || 'Unknown')} · {r.importLocked || r.status === 'Imported' ? 'Historical import · unposted' : r.status || 'Recorded'} · {r.match || 'Direct match'}</small>
                   <ArrowUpRight size={16} />
                 </button>
               ))}
@@ -441,6 +449,8 @@ export default function ShipzyWorkspace({
             <ShipzyChecklist fy={fy} go={go} />
           ) : route === 'costing' ? (
             legacy('profitability')
+          ) : route === 'help' ? (
+            <ShipzyHelp go={go} />
           ) : (
             legacy()
           )}
@@ -454,6 +464,22 @@ export default function ShipzyWorkspace({
       </div>
     </div>
   );
+}
+
+function ShipzyHelp({ go }: { go: (route: string) => void }) {
+  return <section className="shipzy-panel help-content">
+    <p>Start with company details and the customers, suppliers, products, currencies and bank details needed for your documents.</p>
+    <Button variant="outline" onClick={() => go('masters')}>Review setup</Button>
+    <h2>From draft to posted</h2>
+    <p>Create a transaction, check its amounts and documents, then use its Actions menu to move it through review and posting. Posted financial documents create ledger entries; corrections require reversal and a new document.</p>
+    <h2>Historical imports</h2>
+    <p>Imported workbook records preserve historical evidence but are not posted to the live ledger. Review their source and reconciliation separately before using them as opening accounting balances.</p>
+    <Button variant="outline" onClick={() => go('workbook-data')}>Review imported data</Button>
+    <h2>Find and verify</h2>
+    <p>The year selector scopes searches and registers. Search results show the record year and whether it came from historical import; choose “Search all financial years” when needed. The dashboard uses posted ledger figures, and its reports are working views for review.</p>
+    <h2>External steps</h2>
+    <p>Government filing, bank feeds, carrier tracking and email delivery require external services. Saved references and drafted documents do not confirm submission or delivery.</p>
+  </section>;
 }
 function ShipzyTotals({ records, fy }: { records: any[]; fy: string }) {
   const [currency, setCurrency] = useState(
@@ -797,7 +823,8 @@ export function ShipzyRegister({
   useEffect(() => setPage(0), [q, status, size, sortKey, descending]);
   const sales = salesKinds.includes(kind),
     products = kind === 'products',
-    parties = ['customers', 'vendors'].includes(kind);
+    parties = ['customers', 'vendors'].includes(kind),
+    company = kind === 'master-company-information';
   return (
     <>
       {!master && (
@@ -809,7 +836,7 @@ export function ShipzyRegister({
           {' · Matching line total: '}{money(productSalesTotal(records, fy, filters.get('currency') || 'INR', filters.get('month') || '', filters.get('product') || ''), filters.get('currency') || 'INR')}
         </span><Button variant="outline" onClick={() => go(kind)}>Clear chart filters</Button></div>}
         {master && <nav className="shipzy-tabs" aria-label="Record status">
-          {['All', 'Active', 'Inactive'].map(s => <button key={s} className={status === s ? 'active' : ''} onClick={() => setStatus(s)}>{s === 'All' ? m.label : s}</button>)}
+          {['All', 'Active', 'Inactive'].map(s => <button key={s} className={status === s ? 'active' : ''} onClick={() => setStatus(s)}>{s}</button>)}
         </nav>}
         {!master && (
           <nav className="shipzy-tabs">
@@ -874,7 +901,7 @@ export function ShipzyRegister({
               className="shipzy-export"
               onClick={() =>
                 exportCSV(
-                  rows.map((r) => products ? ({
+                  rows.map((r) => company ? companyExportRow(r) : products ? ({
                     name: r.name, sku: r.sku, hsn: r.hsn, productTag: r.productTag,
                     unit: records.find(u => u.id === r.unitId)?.code || r.unit || '',
                     netWeightKg: r.weight, grossWeightKg: r.grossWeight, volumeM3: r.volumeM3,
@@ -928,6 +955,8 @@ export function ShipzyRegister({
                     {measurements && <><th>NET KG / UNIT</th><th>GROSS KG / UNIT</th><th>M³ / UNIT</th></>}
                     <th>LAST UPDATED</th>
                   </>
+                ) : company ? (
+                  <><th>TRADING NAME</th><th>GSTIN</th><th>EMAIL</th></>
                 ) : parties ? (
                   <>
                     <th>EMAIL</th>
@@ -1046,6 +1075,8 @@ export function ShipzyRegister({
                       {measurements && <><td>{r.weight ?? '—'}</td><td>{r.grossWeight ?? '—'}</td><td>{r.volumeM3 ?? '—'}</td></>}
                       <td>{r.updatedAt || r.created || '—'}</td>
                     </>
+                  ) : company ? (
+                    <><td>{r.tradeName || '—'}</td><td>{r.gstin || 'Not provided'}</td><td>{r.email || 'Not provided'}</td></>
                   ) : parties ? (
                     <>
                       <td>{r.email || '—'}</td>

@@ -27,6 +27,8 @@ import SalesDocuments from './sales-documents';
 import { salesKinds } from '@/lib/sales-engine';
 import OperationAdmin from './operation-admin';
 import OperationStock from './operation-stock';
+import {loadRecords} from '@/lib/load-records';
+import { FinanceControls } from './finance-controls';
 import OperationalOverview from './operational-overview';
 import { opMap, operationRoutes, permittedOperation } from '@/lib/operations';
 import {
@@ -433,7 +435,7 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
     let active = true;
     setLoading(true);
     setError('');
-    api('records')
+    loadRecords(api)
       .then((r) => {
         if (active) {
           setRecords(r);
@@ -919,6 +921,10 @@ function PageContent({
   notifications,
   changeFy,
 }: any) {
+  const [pageNotifications,setPageNotifications]=useState<any[]>([]);
+  useEffect(()=>{if(route==='notifications') api('notifications?fy='+encodeURIComponent(fy)).then(setPageNotifications).catch(e=>setError(e.message));},[route,fy,records]);
+  const [activityOffset, setActivityOffset] = useState(0);
+  useEffect(() => setActivityOffset(0), [route, fy]);
   const [users, setUsers] = useState<any[]>([]),
     [events, setEvents] = useState<any[]>([]),
     [error, setError] = useState(''),
@@ -930,10 +936,10 @@ function PageContent({
         .then(setUsers)
         .catch((e) => setError(e.message));
     if (['audit', 'activity'].includes(route))
-      api('activity')
+      api('activity?fy='+encodeURIComponent(fy)+'&limit=50&offset='+activityOffset)
         .then(setEvents)
         .catch((e) => setError(e.message));
-  }, [route, records]);
+  }, [route, records, fy, activityOffset]);
   if (error)
     return (
       <div role="alert" className="error-box">
@@ -1095,7 +1101,7 @@ function PageContent({
     );
   if (route === 'settings')
     return (
-      <section className="widget settings-card">
+      <><section className="widget settings-card">
         <h2>Workspace preferences</h2>
         <p>
           Your financial year applies across registers, search and the
@@ -1107,7 +1113,7 @@ function PageContent({
             label="Default financial year"
             value={fy}
             onChange={changeFy}
-            options={fyOptions}
+            options={[...new Set([fy, ...records.map((r:any)=>r.fy).filter((v:any)=>/^\d{4}–\d{2}$/.test(v || ''))])].sort().reverse()}
           />
         </label>
         <div className="settings-row">
@@ -1129,7 +1135,7 @@ function PageContent({
         <p className="note">
           Masters contain business data. Settings control application behaviour.
         </p>
-      </section>
+      </section><FinanceControls role={user.role} onChanged={refresh} /></>
     );
   if (route === 'help') return <Help />;
   if (route === 'users')
@@ -1186,7 +1192,7 @@ function PageContent({
     return (
       <section className="widget">
         <div className="widget-head">
-          <h2>Recent events</h2>
+          <h2>Activity · FY {fy}</h2>
           <Button
             variant="outline"
             onClick={() => exportCSV(events, 'audit')}
@@ -1201,11 +1207,11 @@ function PageContent({
             {events.map((a) => (
               <button
                 key={a.id}
-                onClick={() => go(a.kind === 'users' ? 'users' : a.kind)}
+                onClick={() => go(a.kind === 'users' ? 'users' : a.kind === 'accounting-periods' ? 'settings' : a.kind === 'workbook-import' ? 'workbook-data' : a.kind + (a.record_id ? '?record='+encodeURIComponent(a.record_id) : ''))}
               >
                 <span className="activity-dot" />
                 <div>
-                  <strong>{a.detail}</strong>
+                  <strong>{a.action} · {records.find((r:any)=>r.id===a.record_id)?.reference || records.find((r:any)=>r.id===a.record_id)?.name || a.kind}</strong>
                   <span>
                     {a.actor} · {a.action}
                   </span>
@@ -1218,6 +1224,7 @@ function PageContent({
         ) : (
           <Blank />
         )}
+        <div className="op-toolbar"><Button variant="outline" disabled={activityOffset===0} onClick={()=>setActivityOffset(n=>Math.max(0,n-50))}>Newer events</Button><span>Page {Math.floor(activityOffset/50)+1} · events in selected year</span><Button variant="outline" disabled={events.length<50} onClick={()=>setActivityOffset(n=>n+50)}>Older events</Button></div>
       </section>
     );
   if (route === 'notifications')
@@ -1227,10 +1234,10 @@ function PageContent({
           <h2>Needs your attention</h2>
           <Button
             variant="outline"
-            disabled={!notifications.some((n: any) => !n.read)}
+            disabled={!pageNotifications.some((n: any) => !n.read)}
             onClick={async () => {
               try {
-                await api('notifications/read', {});
+                await api('notifications/read', {fy});
                 refresh();
                 toast.success('Notifications marked as read');
               } catch (e: any) {
@@ -1241,10 +1248,11 @@ function PageContent({
             Mark all as read
           </Button>
         </div>
-        {notifications.length ? (
+        <p className="note">Current issues for this year. Mark read acknowledges an alert; resolving its source clears it.</p>
+        {pageNotifications.length ? (
           <div className="activity-list">
-            {notifications.map((n: any) => (
-              <button key={n.id} onClick={() => go('exceptions', n.reference)}>
+            {pageNotifications.map((n: any) => (
+              <button key={n.id} onClick={() => go(n.route || 'exceptions?record='+encodeURIComponent(n.id))}>
                 <span className={'activity-dot ' + (n.read ? 'read' : '')} />
                 <div>
                   <strong>{n.name}</strong>
@@ -1260,7 +1268,7 @@ function PageContent({
         ) : (
           <Blank
             title="You're all caught up"
-            detail="There are no open recorded exceptions for this financial year."
+            detail="There are no current issues for this financial year."
           />
         )}
       </section>

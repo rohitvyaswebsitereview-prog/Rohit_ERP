@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/table';
 import { api, Blank, Loading, Status, money, exportCSV, today } from './erp-ui';
 import { opMap, operationModules } from '@/lib/operations';
+import { taxWorkingRows } from '@/lib/audit-presentation';
+import OperationStock from './operation-stock';
 export const reportRoutes: Record<
   string,
   { title: string; kinds?: string[]; mode?: string }
@@ -75,7 +77,6 @@ export const reportRoutes: Record<
   },
   'inventory-inventory-valuation': {
     title: 'Inventory Valuation',
-    kinds: ['machines'],
     mode: 'valuation',
   },
   'inventory-inventory-reports': {
@@ -102,7 +103,7 @@ export const reportRoutes: Record<
     ],
   },
   'finance-tax': {
-    title: 'Tax Register',
+    title: 'Tax Working Register',
     kinds: ['invoices', 'domestic-invoices', 'purchase-invoices', 'expenses'],
     mode: 'tax',
   },
@@ -212,7 +213,16 @@ export const reportRoutes: Record<
     kinds: ['import-orders', 'bill-of-entry'],
   },
 };
-export function OperationReports({
+export function OperationReports(props: {
+  route: string;
+  fy: string;
+  go: (r: string) => void;
+}) {
+  if (reportRoutes[props.route]?.mode === 'valuation') return <OperationStock valuation />;
+  return <ReportTable {...props} />;
+}
+
+function ReportTable({
   route,
   fy,
   go,
@@ -276,6 +286,7 @@ export function OperationReports({
       (status === 'All' || r.status === status) &&
       JSON.stringify(r).toLowerCase().includes(query.toLowerCase()),
   );
+  if (config.mode === 'tax' && status === 'All') rows = taxWorkingRows(rows);
   const due = (r: any) =>
     r.leoDueDate || r.realisationDue || r.validUntil || r.dueDate || '';
   const age = (r: any) =>
@@ -450,6 +461,8 @@ export function OperationReports({
         </p>
       )}
       <section className="widget">
+        {config.mode === 'tax' && <p className="op-note">Posted documents only by default. This is a working register for review; it is not a filed tax return. Select another status to inspect unposted records.</p>}
+        {(route.startsWith('costing-') || route === 'reports-costing-reports') && <p className="op-note">Working list of entered costing sheets. These figures are not reconciled to posted purchases, freight, bank charges or exchange differences; review each source before using a margin.</p>}
         {rows.length ? (
           <Table>
             <TableHeader>

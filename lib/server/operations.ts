@@ -1,3 +1,8 @@
+import { validatePurchaseMatch } from '../purchase-matching';
+import { validateRecipe, productionPlan } from '../production-recipe';
+import { planStockIssue } from '../stock-issue';
+import { redactAccess } from '../access-policy';
+import { validateUpload } from '../upload-validation';
 import { calculate } from '../transaction-rules';
 import { wordDocument } from './word-document';
 import { pdfDocument } from './pdf-document';
@@ -75,41 +80,7 @@ export async function operations(
   const all = rawAll.results.map(parse);
   const visible = (r: any) =>
     opMap[r.kind] && permittedOperation(opMap[r.kind], u.role);
-  const redact = (r: any) => {
-    if (u.role === 'Logistics') {
-      const out = { ...r };
-      for (const k of [
-        'cost',
-        'amount',
-        'defaultRate',
-        'creditLimit',
-        'accountNumber',
-        'bankAccounts',
-        'bankName',
-        'pan',
-        'gstin',
-        'currency',
-      ])
-        delete out[k];
-      return out;
-    }
-    if (u.role !== 'Viewer') return r;
-    const out = { ...r };
-    if (out.bankAccounts)
-      out.bankAccounts = out.bankAccounts.map((a: any) => ({
-        ...a,
-        number: '••••' + String(a.number || '').slice(-4),
-      }));
-    for (const k of [
-      'accountNumber',
-      'pan',
-      'gstin',
-      'customerGstin',
-      'taxRegistrations',
-    ])
-      if (out[k]) out[k] = '••••' + String(out[k]).slice(-4);
-    return out;
-  };
+  const redact = (r: any) => redactAccess(r, u.role);
   const event = (name: string, k: string, id: string, detail: any) =>
     db
       .prepare('INSERT INTO audit VALUES (?,?,?,?,?,?,?,?)')
@@ -242,6 +213,7 @@ export async function operations(
     if (rid) {
       const doc = docs.find((r: any) => r.id === rid);
       if (!doc) return json({ error: 'Document not found.' }, 404);
+      if (['Viewer','Logistics'].includes(u.role)) return json({error:'File contents may contain protected financial or identity details. Ask an authorised editor for an approved copy.'},403);
       const file = await bucket?.get(doc.objectKey);
       if (!file) return json({ error: 'File is unavailable.' }, 404);
       return new Response(file.body, {
@@ -341,8 +313,9 @@ export async function operations(
   if (req.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
 
   if (action === 'print' || action === 'email-draft') {
+    if (u.role === 'Viewer') return json({error:'Ask an authorised editor to prepare an outward document.'},403);
     await event(
-      action === 'print' ? 'Printed' : 'Email draft prepared',
+      action === 'print' ? 'Print preview requested' : 'Email draft prepared',
       kind,
       rid,
       { reference: existing.reference || existing.name },
@@ -568,6 +541,8 @@ export async function operations(
     const bytes = Uint8Array.from(atob(b.content), (c) => c.charCodeAt(0));
     if (bytes.length > 5 * 1024 * 1024 || !bytes.length)
       throw new Error('Select a non-empty file up to 5 MB.');
+    const validation = validateUpload(mime, bytes);
+    if (!validation.valid) throw new Error(validation.reason);
     const did = makeId(),
       objectKey = `${u.tenant_id}/${rid}/${did}`;
     const version =
@@ -726,7 +701,14 @@ export async function operations(
       );
     if (kind === 'approvals' && u.role !== 'Admin')
       throw new Error('Only an administrator may approve or reject requests.');
-    if (m.posting && status === 'Posted' && u.role !== 'Admin') {
+    const policyRow = await db.prepare('SELECT data FROM accounting_controls WHERE tenant_id=?').bind(u.tenant_id).first();
+    const separateApprover = policyRow && JSON.parse(policyRow.data).separateApprover;
+    if (kind === 'approvals' && status === 'Approved' && separateApprover) {
+      const source = find(existing.sourceId);
+      if (existing.preparedById === u.id || source?.preparedById === u.id || (!source?.preparedById && source?.createdBy === u.name))
+        throw new Error('A different administrator must approve this document.');
+    }
+    if (m.posting && status === 'Posted') {
       const rules = all.filter(
         (r: any) =>
           r.kind === 'approval-rules' &&
@@ -742,17 +724,25 @@ export async function operations(
             r.kind === 'approvals' &&
             r.sourceId === rid &&
             r.status === 'Approved' &&
-            r.documentVersion === existing.version,
+            r.documentVersion === existing.version &&
+            (!separateApprover || (r.approvedById && r.approvedById !== existing.preparedById)),
         )
       )
         throw new Error(
           'Administrator approval is required for this document version. Create an Approval Request first.',
         );
     }
+    if (kind === 'production-orders' && status === 'Confirmed') {
+      const bom = find(existing.bomId, 'master-bom');
+      if (!bom || bom.status !== 'Active' || bom.productId !== existing.productId) throw new Error('Select an active BOM for this finished product.');
+      productionPlan(bom, existing.quantity, existing.expectedScrapQuantity, all);
+    }
     if (m.posting && ['Posted', 'Reversed'].includes(status)) {
+      if (kind === 'purchase-invoices' && status === 'Posted') validatePurchaseMatch(existing, all);
       let journal: any;
       const stockStatements: any[] = [];
       const stockJournal: any[] = [];
+      const costByCurrency = new Map<string, any[]>();
       if (status === 'Posted') {
         for (const field of m.fields)
           if (field.required && !existing[field.key])
@@ -895,22 +885,34 @@ export async function operations(
         };
       }
       if (['purchase', 'sale'].includes(m.posting)) {
-        const stockLines =
-          status === 'Reversed'
-            ? all.filter(
-                (r: any) =>
-                  r.kind === 'movements' &&
-                  r.sourceId === rid &&
-                  r.operationStock,
-              )
-            : existing.lines.filter((l: any) => l.productId);
+        let stockLines: any[] = status === 'Reversed'
+          ? all.filter((r: any) => r.kind === 'movements' && r.sourceId === rid && r.operationStock && !r.stockReversal)
+          : existing.lines.filter((l: any) => l.productId);
+        if (status === 'Posted' && m.posting === 'sale') {
+          const planned: any[] = [], seen = new Set<string>();
+          for (const line of stockLines) {
+            if (seen.has(line.productId)) throw new Error('Combine repeated products into one line before posting.');
+            seen.add(line.productId);
+            const pools = (await db.prepare('SELECT * FROM stock_balances WHERE tenant_id=? AND product_id=? AND warehouse_id=? ORDER BY currency')
+              .bind(u.tenant_id, line.productId, existing.warehouseId).all()).results;
+            const serials = String(line.serialNumbers || '').split(/[\n,]+/).map(v=>v.trim()).filter(Boolean);
+            let offset = 0;
+            for (const allocation of planStockIssue(pools, Number(line.quantity))) {
+              planned.push({...line, quantity:allocation.quantity, stockValue:allocation.stockValue, stockCurrency:allocation.currency,
+                serialNumbers:serials.slice(offset, offset + allocation.quantity).join(',')});
+              offset += allocation.quantity;
+            }
+          }
+          stockLines = planned;
+        }
         const used = new Set<string>();
         for (const [i, line] of stockLines.entries()) {
           const productId = line.productId,
             warehouseId = existing.warehouseId;
           if (!warehouseId)
             throw new Error('Select a warehouse before posting stock.');
-          const key = productId + '|' + warehouseId;
+          const stockCurrency = line.stockCurrency || line.currency || existing.currency;
+          const key = productId + '|' + warehouseId + '|' + stockCurrency;
           if (used.has(key))
             throw new Error(
               'Combine repeated products into one line before posting.',
@@ -930,14 +932,14 @@ export async function operations(
             .prepare(
               'SELECT * FROM stock_balances WHERE tenant_id=? AND product_id=? AND warehouse_id=? AND currency=?',
             )
-            .bind(u.tenant_id, productId, warehouseId, existing.currency)
+            .bind(u.tenant_id, productId, warehouseId, stockCurrency)
             .first();
           let value =
             status === 'Reversed'
               ? line.stockValue
               : m.posting === 'purchase'
                 ? line.basic + line.other + line.rounding
-                : bal && bal.quantity
+                : line.stockValue !== undefined ? line.stockValue : bal && bal.quantity
                   ? Math.round((bal.value * quantity) / bal.quantity)
                   : 0;
           if (!inward && (!bal || bal.quantity < quantity))
@@ -954,7 +956,7 @@ export async function operations(
                   u.tenant_id,
                   productId,
                   warehouseId,
-                  existing.currency,
+                  stockCurrency,
                   quantity,
                   value,
                 ),
@@ -972,7 +974,7 @@ export async function operations(
                   u.tenant_id,
                   productId,
                   warehouseId,
-                  existing.currency,
+                  stockCurrency,
                 ),
             );
           }
@@ -994,7 +996,9 @@ export async function operations(
                 quantity,
                 direction: inward ? 'Receipt' : 'Issue',
                 stockValue: value,
-                currency: existing.currency,
+                currency: stockCurrency,
+                stockCurrency,
+                stockReversal: status === 'Reversed',
                 reason,
                 status: 'Posted',
               },
@@ -1079,10 +1083,9 @@ export async function operations(
             }
           }
           if (status === 'Posted' && m.posting === 'sale' && value) {
-            stockJournal.push(
-              { account: '5000', debit: value, credit: 0 },
-              { account: '1200', debit: 0, credit: value },
-            );
+            const target = stockCurrency === existing.currency ? stockJournal : (costByCurrency.get(stockCurrency) || []);
+            target.push({ account: '5000', debit: value, credit: 0 }, { account: '1200', debit: 0, credit: value });
+            if (stockCurrency !== existing.currency) costByCurrency.set(stockCurrency, target);
           }
           if (
             status === 'Posted' &&
@@ -1138,6 +1141,16 @@ export async function operations(
       if (stockJournal.length) {
         journal.lines.push(...stockJournal);
         assertBalanced(journal.lines);
+      }
+      // Cost pools retain their actual currency. No undocumented exchange rate is assumed.
+      if (status === 'Posted') for (const [currency, lines] of costByCurrency) {
+        assertBalanced(lines);
+        stockStatements.push(saveNew('journal', {date:journal.date,reference:existing.reference,currency,status:'Posted',sourceId:rid,
+          memo:`Inventory cost: ${existing.reference}`,lines}, `${rid}-cost-${currency}-posting`));
+      }
+      if (status === 'Reversed') for (const original of all.filter((r: any)=>r.kind==='journal' && r.sourceId===rid && r.id.startsWith(`${rid}-cost-`) && r.id.endsWith('-posting'))) {
+        stockStatements.push(saveNew('journal', {...original,date:journal.date,memo:`Reversal: ${original.memo}`,
+          lines:original.lines.map((l: any)=>({...l,debit:l.credit,credit:l.debit}))}, original.id.replace(/-posting$/, '-reversal')));
       }
       // A deterministic journal key makes concurrent post/reversal requests atomic and idempotent.
       const journalId = `${rid}-${status === 'Posted' ? 'posting' : 'reversal'}`;
@@ -1214,6 +1227,12 @@ export async function operations(
               .bind(source.id, u.tenant_id),
           );
         }
+      if (kind === 'purchase-invoices' && existing.sourceId) {
+        const order = find(existing.sourceId, 'purchase-orders');
+        if (!order) throw new Error('Purchase order is unavailable.');
+        statements.push(db.prepare('INSERT INTO posting_guards(id,expected,actual) VALUES(?,?,(SELECT version FROM records WHERE tenant_id=? AND id=?))').bind(journalId + '-purchase-order', order.version, u.tenant_id, order.id),
+          db.prepare('UPDATE records SET version=version+1 WHERE tenant_id=? AND id=?').bind(u.tenant_id, order.id));
+      }
       const guard = db
         .prepare(
           'INSERT INTO posting_guards(id,expected,actual) VALUES(?,?,(SELECT version FROM records WHERE id=? AND tenant_id=?))',
@@ -1428,7 +1447,7 @@ export async function operations(
       await db.batch(statements);
       return json({ id: rid });
     }
-    return update({ ...existing, status }, 'Status changed', {
+    return update({ ...existing, status, ...(kind === 'approvals' && status === 'Approved' ? {approvedById:u.id} : {}) }, 'Status changed', {
       from: current,
       to: status,
       reason,
@@ -1479,6 +1498,7 @@ export async function operations(
   )
     throw new Error('Closed records cannot be edited.');
   const data: any = {
+    preparedById: existing?.preparedById || u.id,
     operation: true,
     status: existing?.status || initialStatus(m),
     createdBy: existing?.createdBy || u.name,
@@ -1537,6 +1557,15 @@ export async function operations(
         throw new Error(`Select an active ${field.label}.`);
     }
     data[field.key] = v;
+  }
+  if (kind === 'master-bom') {
+    if (existing && typeof existing.components === 'string' && b.bomMigrationConfirmed !== true) throw new Error('Confirm replacement of the legacy BOM text with structured rows.');
+    validateRecipe(data.productId, data.components, all);
+  }
+  if (kind === 'production-orders') {
+    const bom = find(data.bomId, 'master-bom');
+    if (!bom || bom.status !== 'Active' || bom.productId !== data.productId) throw new Error('Select an active BOM for this finished product.');
+    productionPlan(bom, data.quantity, data.expectedScrapQuantity, all);
   }
   if (kind === 'products') {
     if (data.grossWeight !== '' && data.weight !== '' && Number(data.grossWeight) < Number(data.weight))

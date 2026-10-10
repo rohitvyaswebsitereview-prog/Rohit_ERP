@@ -8,7 +8,7 @@ export type OpField = {
   source?: string;
   options?: string[];
   section?: string;
-  columns?: { key: string; label: string; type?: string }[];
+  columns?: { key: string; label: string; type?: string; source?: string; required?: boolean }[];
 };
 export type OpModule = {
   key: string;
@@ -100,7 +100,11 @@ const masterFields: Record<string, OpField[]> = {
     f('name', 'BOM name', 'text', true),
     ref('productId', 'Finished product', 'products', true),
     f('revision', 'Revision', 'text', true),
-    f('components', 'Components and quantities', 'textarea', true),
+    { key: 'components', label: 'Materials per finished unit', type: 'rows', required: true, section: 'Recipe', columns: [
+      { key: 'productId', label: 'Component product', type: 'reference', source: 'products', required: true },
+      { key: 'unitId', label: 'Unit', type: 'reference', source: 'master-units', required: true },
+      { key: 'quantityPerUnit', label: 'Quantity per finished unit', type: 'number', required: true },
+    ] },
   ],
   'delivery-addresses': [
     f('name', 'Location name', 'text', true),
@@ -805,7 +809,8 @@ for (const [key, label, group, fields] of [
     [
       ref('bomId', 'BOM', 'master-bom', true),
       ref('productId', 'Output product', 'products', true),
-      f('quantity', 'Planned quantity', 'number', true),
+      f('quantity', 'Planned good units', 'number', true),
+      f('expectedScrapQuantity', 'Expected scrap units', 'number'),
       f('startDate', 'Planned start', 'date'),
       f('completionDate', 'Planned finish', 'date'),
     ],
