@@ -40,6 +40,7 @@ import {
 } from './erp-ui';
 import type { RecordData } from '@/lib/domain';
 import { grossProfitPresentation } from '@/lib/audit-presentation';
+import { RecordedBusinessOverview } from './recorded-business';
 type Props = {
   fy: string;
   start: string;
@@ -184,7 +185,7 @@ export default function Dashboard({
     <div className="dashboard-content">
       <div className="section-eyebrow">
         <span>01 / BUSINESS OVERVIEW</span>
-        {financeVisible && (
+        {financeVisible && data.totals?.length > 0 && (
           <Pick
             label="Display currency"
             value={currency}
@@ -193,7 +194,13 @@ export default function Dashboard({
           />
         )}
       </div>
+      {financeVisible && <State state={financial}>
+        {data.recorded && <RecordedBusinessOverview data={data.recorded} go={go} />}
+        {!data.totals?.length && <div className="data-basis" role="status">No posted account balances for this period. Your recorded business figures appear above. Imported history is preserved without creating accounting entries.</div>}
+      </State>}
       <State state={financial}>
+        {(data.totals?.length > 0 || !financeVisible) && <>
+        {financeVisible && <h2>Posted account balances</h2>}
         <div
           className={'kpi-grid ' + (!financeVisible ? 'restricted-kpis' : '')}
         >
@@ -229,6 +236,7 @@ export default function Dashboard({
             {dateLabel(end)}
           </div>
         )}
+        </>}
       </State>
       <div className="section-eyebrow">
         <span>02 / NEEDS ATTENTION</span>
@@ -283,7 +291,7 @@ export default function Dashboard({
         <span>03 / RUNNING OPERATIONS</span>
       </div>
       <Widget
-        title="Orders in motion"
+        title={`Orders in motion${operations.loading ? '' : ' · ' + running.length + ' active'}`}
         subtitle="Current status of transactions dated through the selected end date"
         onView={() => go('transactions')}
         onRefresh={operations.retry}
@@ -371,7 +379,7 @@ export default function Dashboard({
           )}
         </State>
       </Widget>
-      {financeVisible && (
+      {financeVisible && (financial.loading || financial.error || data.totals?.length > 0) && (
         <>
           <div className="section-eyebrow">
             <span>04 / SALES & PROFITABILITY</span>

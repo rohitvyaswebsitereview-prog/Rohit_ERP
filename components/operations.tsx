@@ -532,11 +532,13 @@ export default function Operations({
                 onClick={() => {
                   setEditing(false);
                   setError('');
+                  if (presentation === 'shipzy')
+                    go(kind + (selected ? '?record=' + encodeURIComponent(selected) : ''));
                 }}
               >
                 Cancel
               </Button>
-              <Button disabled={busy || (kind === 'master-bom' && typeof record?.components === 'string' && !draft.bomMigrationConfirmed)}>
+              <Button type="submit" disabled={busy || (kind === 'master-bom' && typeof record?.components === 'string' && !draft.bomMigrationConfirmed)}>
                 {busy ? 'Saving…' : 'Save record'}
               </Button>
             </div>
@@ -1436,7 +1438,7 @@ export function Documents({
             <span>Tags</span>
             <Input value={tags} onChange={(e) => setTags(e.target.value)} />
           </label>
-          <Button disabled={busy || !file}>
+          <Button type="submit" disabled={busy || !file}>
             {busy ? 'Uploading…' : 'Upload document'}
           </Button>
         </form>

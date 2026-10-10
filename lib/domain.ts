@@ -123,6 +123,47 @@ export function postedAsOf(record: RecordData, records: RecordData[], end: strin
   }
   return [...net.values()].some(value => value !== 0);
 }
+export const businessMetrics = [
+  { key: 'sales', label: 'Sales invoice value', kinds: ['invoices', 'domestic-invoices'] },
+  { key: 'purchases', label: 'Purchase invoice value', kinds: ['purchase-invoices'] },
+  { key: 'expenses', label: 'Expenses', kinds: ['expenses', 'bills'] },
+  { key: 'receipts', label: 'Customer receipts', kinds: ['receipts'] },
+  { key: 'payments', label: 'Supplier payments', kinds: ['payments'] },
+];
+export function physicalStockQuantity(records: RecordData[], productId: string, warehouseId: string, end: string) {
+  const movements = records.filter(r => r.kind === 'movements' && r.productId === productId &&
+    r.warehouseId === warehouseId && ['Posted', 'Imported'].includes(r.status) &&
+    ['Receipt', 'Issue'].includes(r.direction) && Number.isFinite(r.quantity) && r.quantity > 0 &&
+    typeof r.date === 'string' && r.date <= end && /^\d{4}-\d{2}-\d{2}$/.test(r.date));
+  return movements.length ? movements.reduce((sum,r) => sum + (r.direction === 'Receipt' ? 1 : -1) * r.quantity, 0) : null;
+}
+/** Recorded document values, separate from revenue, profit, or bank ledger balances. */
+export function recordedBusiness(records: RecordData[], start: string, end: string) {
+  const rows: RecordData[] = [];
+  let excluded = 0;
+  for (const record of records) {
+    const metric = businessMetrics.find(m => m.kinds.includes(record.kind));
+    if (!metric) continue;
+    const historical = record.importLocked && record.status === 'Imported';
+    if (!historical && !postedAsOf(record, records, end)) continue;
+    try { validDate(record.date); } catch { excluded++; continue; }
+    if (record.date < start || record.date > end) continue;
+    const usd = record.kind === 'invoices' && Number(record.totalUsd) > 0;
+    const currency = usd ? 'USD' : record.currency;
+    if (!usd && (record.amount == null || typeof record.amount === 'boolean' || String(record.amount).trim() === '')) { excluded++; continue; }
+    const amount = usd ? Math.round(Number(record.totalUsd) * 100) : Number(record.amount);
+    if (!/^[A-Z]{3}$/.test(currency || '') || !Number.isSafeInteger(amount) || amount < 0) { excluded++; continue; }
+    rows.push({ ...record, metric: metric.key, currency, amount });
+  }
+  const totals: {metric: string; currency: string; amount: number; count: number}[] = [];
+  for (const row of rows) {
+    let total = totals.find(t => t.metric === row.metric && t.currency === row.currency);
+    if (!total) { total = { metric: row.metric, currency: row.currency, amount: 0, count: 0 }; totals.push(total); }
+    total.amount += row.amount; total.count++;
+  }
+  return { totals, rows, excluded };
+}
+
 export function dashboard(records: RecordData[], start: string, end: string) {
   const period = (r: RecordData) => r.date >= start && r.date <= end;
   const journals = records.filter(
@@ -245,6 +286,7 @@ export function dashboard(records: RecordData[], start: string, end: string) {
       }))
       .filter((r) => r.outstanding > 0);
   return {
+    recorded: recordedBusiness(records, start, end),
     totals,
     productContribution: [...contribution.values()].sort((a,b) => b.profit-a.profit),
     trend: Object.values(trend),

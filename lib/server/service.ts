@@ -671,13 +671,15 @@ export async function handle(req: Request) {
         end,
       );
       if (u.role === 'Logistics') {
+        result.recorded = { totals: [], rows: [], excluded: 0 };
         result.productContribution = [];
         result.totals = [];
         result.trend = [];
         result.receivables = [];
         result.payables = [];
       }
-      return json(result);
+      // The overview needs aggregates only; record details use the access-filtered records API.
+      return json({ ...result, recorded: { ...result.recorded, rows: [] } });
     }
     if (path === 'records' && req.method === 'GET') {
       const all = await records(

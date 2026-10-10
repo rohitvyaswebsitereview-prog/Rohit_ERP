@@ -1,3 +1,4 @@
+import { reportRoutes } from './report-routes';
 import { opMap, operationRoutes } from './operations';
 import { masterItems } from './masters';
 import {
@@ -456,3 +457,11 @@ Object.assign(titles, {
   reconciliation: 'Reconciliation',
   'architecture-map': 'Architecture & lifecycle map',
 });
+
+// Resolve implemented screens before any sidebar snapshots the menu inventory.
+for (const [route, config] of Object.entries(reportRoutes)) {
+  pendingMenuRoutes.delete(route);
+  titles[route] = config.title;
+}
+for (const route of ['administration-permissions', 'administration-login-security'])
+  pendingMenuRoutes.delete(route);

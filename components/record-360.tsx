@@ -530,7 +530,7 @@ export function Record360({
                     </label>
                   ))}
                 </div>
-                <Button disabled={busy}>Calculate and save audit</Button>
+                <Button type="submit" disabled={busy}>Calculate and save audit</Button>
               </form>
             )}
             {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
@@ -633,7 +633,7 @@ export function Record360({
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
                 accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.docx,.xlsx"
               />
-              <Button disabled={busy || !file}>Upload document</Button>
+              <Button type="submit" disabled={busy || !file}>Upload document</Button>
             </form>
           )}
           <p>
@@ -713,7 +713,7 @@ export function Record360({
                   />
                 </label>
               </div>
-              <Button disabled={busy}>Create linked task</Button>
+              <Button type="submit" disabled={busy}>Create linked task</Button>
             </form>
           )}
         </section>
@@ -794,7 +794,7 @@ export function Record360({
                     <option>Confirmed</option>
                     <option>Rejected</option>
                   </select>
-                  <Button disabled={busy}>Save review</Button>
+                  <Button type="submit" disabled={busy}>Save review</Button>
                 </form>
               )}
             </div>
@@ -860,7 +860,7 @@ export function Record360({
                 value={link.reason || ''}
                 onChange={(e) => setLink({ ...link, reason: e.target.value })}
               />
-              <Button disabled={busy}>Save relationship</Button>
+              <Button type="submit" disabled={busy}>Save relationship</Button>
             </form>
           )}
         </section>

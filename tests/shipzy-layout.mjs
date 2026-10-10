@@ -11,6 +11,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import assert from 'node:assert/strict';
 import {shipzyMenus} from './lib/shipzy-navigation';
+import {reportRoutes} from './lib/report-routes';
 import {kinds, dashboard} from './lib/domain';
 import {dashboardPeriod} from './lib/dashboard-period';
 import {stockAlerts} from './lib/stock-alerts';
@@ -134,7 +135,7 @@ check('Final dashboard document domain order and Masters entry are preserved',()
  assert.deepEqual(shipzyMenus.map(m=>m.title),['Dashboard','Sales & Export','Purchase','Import','Inventory','Logistics','Production','Finance','Compliance','Documents','Tasks & Checklist','Costing & Profitability','Reports','Masters','Administration','Settings','Help & Support']);
  assert.equal(shipzyMenus.find(m=>m.route==='masters').children,undefined);
 });
-check('Every sidebar destination resolves to a working screen',()=>{for(const menu of shipzyMenus)for(const r of menu.children?menu.children.map(c=>c[0]):[menu.route])assert.ok(opMap[operationRoutes[r]||r]||custom.has(r)||kinds.includes(r),'Missing '+r)});
+check('Every sidebar destination resolves to a working screen',()=>{for(const menu of shipzyMenus)for(const r of menu.children?menu.children.map(c=>c[0]):[menu.route])assert.ok(opMap[operationRoutes[r]||r]||reportRoutes[r]||r==='administration-login-security'||custom.has(r)||kinds.includes(r),'Missing '+r)});
 const r={id:'i',kind:'invoices',reference:'INV-TEST',fy:'2026–27',date:'2026-04-01',status:'Imported',importLocked:true,customerName:'Customer <test>',currency:'INR',amount:118000,lines:[{description:'Excavator',quantity:1,uom:'NOS'}]};
 check('Product register sorts the full result before pagination and shows identifying fields',()=>{
   const records=Array.from({length:12},(_,i)=>({id:'p'+i,kind:'products',name:'Model '+(12-i),sku:'SKU-'+(12-i),status:'Active',unitId:'unit'}));

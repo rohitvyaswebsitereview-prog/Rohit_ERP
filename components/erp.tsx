@@ -36,14 +36,10 @@ import {
   OperationHub,
   reportRoutes,
 } from './operation-reports';
-for (const [route, config] of Object.entries(reportRoutes)) {
-  pendingMenuRoutes.delete(route);
-  titles[route] = config.title;
-}
-for (const r of ['administration-permissions', 'administration-login-security'])
-  pendingMenuRoutes.delete(r);
-
 import { masterItems } from '@/lib/masters';
+import { RecordedBusinessReport } from './recorded-business';
+import { physicalStockQuantity } from '@/lib/domain';
+titles['business-records'] = 'Recorded business';
 import { useEffect, useState, useCallback } from 'react';
 import {
   Search,
@@ -882,7 +878,7 @@ function Workspace({ user, onLogout }: { user: any; onLogout: () => void }) {
               value={newPassword}
               onChange={setNewPassword}
             />
-            <Button disabled={passwordBusy}>Change password</Button>
+            <Button type="submit" disabled={passwordBusy}>Change password</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -946,6 +942,7 @@ function PageContent({
         {error}
       </div>
     );
+  if (route === 'business-records') return <RecordedBusinessReport records={records} fy={fy} go={go} role={user.role} />;
   if (route === 'architecture-map')
     return <ArchitectureMap role={user.role} go={go} />;
   if (['documents-drive', 'document-inbox'].includes(route))
@@ -1320,18 +1317,7 @@ function PageContent({
         warehouse: w.name,
         unit: p.unit,
         reorder: p.reorderPoint,
-        quantity: records
-          .filter(
-            (m: any) =>
-              m.kind === 'movements' &&
-              m.productId === p.id &&
-              m.warehouseId === w.id,
-          )
-          .reduce(
-            (s: number, m: any) =>
-              s + (m.direction === 'Receipt' ? 1 : -1) * m.quantity,
-            0,
-          ),
+        quantity: physicalStockQuantity(records, p.id, w.id, new Date().toLocaleDateString('en-CA', {timeZone:'Asia/Kolkata'})),
       })),
     );
     return (
@@ -1360,12 +1346,12 @@ function PageContent({
                   <TableCell>{r.sku}</TableCell>
                   <TableCell>{r.warehouse}</TableCell>
                   <TableCell>
-                    {r.quantity} {r.unit}
+                    {r.quantity === null ? 'Not recorded' : r.quantity + ' ' + (r.unit || '')}
                   </TableCell>
                   <TableCell>
                     <Status
                       value={
-                        r.quantity <= r.reorder ? 'Attention' : 'Available'
+                        r.quantity === null ? 'Not recorded' : r.quantity <= r.reorder ? 'Attention' : 'Available'
                       }
                     />
                   </TableCell>
@@ -1380,8 +1366,8 @@ function PageContent({
           />
         )}
         <p className="scope-note">
-          Physical quantities only. Valuation, batch/serial tracking and
-          automatic accounting are later phases.
+          Physical movements recorded through today, across financial years. Drafts and cancelled movements are excluded. A missing movement history is shown as “Not recorded”. Imported serialized units can be reviewed in the machine register.
+          <button className="text-link" onClick={() => go('inventory-inventory-valuation')}>View valued stock</button>
         </p>
       </section>
     );

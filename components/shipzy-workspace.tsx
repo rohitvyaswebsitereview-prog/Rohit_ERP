@@ -105,6 +105,7 @@ export default function ShipzyWorkspace({
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
   const [updatedAt, setUpdatedAt] = useState('');
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [availableYears, setAvailableYears] = useState<string[]>(['2026–27','2025–26','2024–25']);
   const [url, setUrl] = useState('dashboard'),
     [fy, setFy] = useState('2026–27'),
@@ -289,7 +290,7 @@ export default function ShipzyWorkspace({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <button aria-label="Search">
+            <button type="submit" aria-label="Search">
               <Search size={20} />
             </button>
           </form>
@@ -323,7 +324,7 @@ export default function ShipzyWorkspace({
               <DropdownMenuItem onClick={() => go('profile')}>
                 My Profile · {user.name}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => go('profile')}>Change Password</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPasswordOpen(true)}>Change Password</DropdownMenuItem>
               <DropdownMenuItem onClick={() => go('settings')}>Preferences</DropdownMenuItem>
               <DropdownMenuItem
                 onClick={async () => {
@@ -462,8 +463,41 @@ export default function ShipzyWorkspace({
           </span>
         </footer>
       </div>
+      <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
+        <DialogContent>
+          <DialogTitle>Change password</DialogTitle>
+          <DialogDescription>Changing your password signs out every active session.</DialogDescription>
+          {passwordOpen && <PasswordChangeForm onDone={() => { setPasswordOpen(false); onLogout(); }} />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+export async function submitPasswordChange(current: string, password: string, onDone: () => void) {
+  await api('password', { current, password });
+  onDone();
+}
+
+export function PasswordChangeForm({ onDone }: { onDone: () => void }) {
+  const [current, setCurrent] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  return <form className="stack" onSubmit={async e => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try { await submitPasswordChange(current, password, onDone); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  }}>
+    <label className="field"><span>Current password</span><Input type="password" autoComplete="current-password" required value={current} onChange={e => setCurrent(e.target.value)} /></label>
+    <label className="field"><span>New password (12–200 characters)</span><Input type="password" autoComplete="new-password" required minLength={12} maxLength={200} value={password} onChange={e => setPassword(e.target.value)} /></label>
+    {error && <p className="error-box" role="alert">{error}</p>}
+    <Button type="submit" disabled={busy}>{busy ? 'Changing password…' : 'Change password'}</Button>
+  </form>;
 }
 
 function ShipzyHelp({ go }: { go: (route: string) => void }) {
@@ -809,6 +843,7 @@ export function ShipzyRegister({
     rows = records.filter(
       (r) =>
         r.kind === kind &&
+        (kind !== 'incentives' || !filters.get('scheme') || r.scheme === filters.get('scheme')) &&
         (!fromChart || productSalesMatches(r, fy, filters.get('currency') || 'INR', filters.get('month') || '', filters.get('product') || '')) &&
         (master || r.fy === fy) &&
         JSON.stringify(r).toLowerCase().includes(q.toLowerCase()) &&
@@ -1670,7 +1705,7 @@ function ShipzyDrive({
       r.kind === (tab === 'Proforma Invoice' ? 'proformas' : 'invoices') &&
       JSON.stringify(r).toLowerCase().includes(q.toLowerCase()),
   );
-  useEffect(() => setPage(0), [tab, q]);
+  useEffect(() => setPage(0), [tab, q, fy, route]);
   return (
     <section className="shipzy-panel">
       <nav className="shipzy-tabs">
